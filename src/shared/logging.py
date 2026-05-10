@@ -14,13 +14,15 @@ API pública:
 
 import logging
 import sys
+from typing import cast
 
 import structlog
+from structlog.stdlib import BoundLogger, LoggerFactory
 
 from src.shared.config import settings
 
 
-def configure_logging(service_name: str | None = None) -> structlog.stdlib.BoundLogger:
+def configure_logging(service_name: str | None = None) -> BoundLogger:
     """Configura structlog para emitir JSON em stdout. Idempotente.
 
     Parameters
@@ -59,12 +61,12 @@ def configure_logging(service_name: str | None = None) -> structlog.stdlib.Bound
             # 6. Renderiza como JSON (uma linha por evento)
             structlog.processors.JSONRenderer(),
         ],
-        wrapper_class=structlog.stdlib.BoundLogger,
-        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=BoundLogger,
+        logger_factory=LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
-    return structlog.get_logger().bind(service=name)
+    return cast(BoundLogger, structlog.get_logger().bind(service=name))
 
 
 def bind_correlation_id(correlation_id: str) -> None:

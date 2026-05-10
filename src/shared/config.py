@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     queue_ingest_chunks: str = "ingest.chunks"
     queue_query_requests: str = "query.requests"
 
-    #Inferência
+    # Inferência
     ollama_url: str = "http://ollama:11434"
     embedding_model: str = "nomic-embed-text"
     generation_model: str = "qwen2.5:7b-instruct"

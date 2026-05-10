@@ -50,6 +50,11 @@ A IA foi utilizada como **co-piloto técnico** nas seguintes etapas, sob direç�
 - Esqueleto do documento técnico final (8.2).
 - Esqueleto dos slides da apresentação (8.3).
 
+### 2.5 Pareamento guiado para aprendizado (a partir de 2026-05-10)
+- Em parte das sessões de implementação, a IA atua em **modo parceiro de código** (skill local `code-partner`): escreve apenas estrutura (imports, assinaturas tipadas, docstrings, esqueletos de teste, `TODO`s comentados) e conduz o desenvolvimento via **perguntas socráticas**.
+- O integrante escreve **o miolo de cada função** — a lógica de negócio, os retornos, os casts de tipo, as correções de bug — recebendo *code review* imediato da IA após cada iteração.
+- Esse modo é deliberadamente mais lento que a geração direta de código (2.3), em troca de garantir que cada integrante compreenda o que está escrevendo. Adotado quando a tarefa tem valor pedagógico claro (cliente HTTP com retry, schemas Pydantic, chunking, etc.).
+
 ## 3. O que os integrantes da equipe fazem
 
 A equipe é responsável por:
@@ -103,4 +108,4 @@ Os modelos de linguagem hospedados (`qwen2.5:7b-instruct`, `nomic-embed-text`, `
 
 ---
 
-**Última atualização:** 2026-05-09. Este documento será atualizado se o padrão de uso da IA mudar significativamente ao longo do desenvolvimento.
+**Última atualização:** 2026-05-10. Este documento será atualizado se o padrão de uso da IA mudar significativamente ao longo do desenvolvimento.

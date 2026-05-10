@@ -10,7 +10,7 @@ from src.shared.config import Settings
 
 
 @pytest.fixture(autouse=True)
-def _isolate_env(monkeypatch):
+def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Limpa variáveis de ambiente que poderiam interferir nos testes.
 
     Sem isso, um shell que tem RABBITMQ_URL=algo herdado faria os testes
@@ -30,9 +30,9 @@ def _isolate_env(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
-def test_settings_loads_expected_defaults():
+def test_settings_loads_expected_defaults() -> None:
     """Sem nenhuma env var, todos os defaults batem com o esperado pelo plano B1."""
-    s = Settings(_env_file=None)
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
 
     # Mensageria
     assert s.rabbitmq_url == "amqp://guest:guest@rabbitmq:5672/"
@@ -68,7 +68,7 @@ def test_settings_loads_expected_defaults():
     assert s.retrieval_top_k_final == 5
 
 
-def test_settings_overrides_via_env(monkeypatch):
+def test_settings_overrides_via_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Variável de ambiente do processo deve sobrescrever o default.
 
     TODO (Davi):
@@ -84,16 +84,16 @@ def test_settings_overrides_via_env(monkeypatch):
     vai funcionar — quando o .env.distributed estiver com URLs do PC1,
     elas têm que sobrescrever os defaults do compose.
     """
-    
+
     monkeypatch.setenv("RABBITMQ_URL", "override-rabbit")
     monkeypatch.setenv("OLLAMA_URL", "override-ollama")
     monkeypatch.setenv("QDRANT_URL", "override-qdrant")
     monkeypatch.setenv("REDIS_URL", "override-redis")
     monkeypatch.setenv("GENERATION_TEMPERATURE", "0.9")
     monkeypatch.setenv("CHUNK_TARGET_TOKENS", "1000")
-    
-    s = Settings(_env_file=None)
-    
+
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+
     assert s.ollama_url == "override-ollama"
     assert s.qdrant_url == "override-qdrant"
     assert s.redis_url == "override-redis"
@@ -102,10 +102,9 @@ def test_settings_overrides_via_env(monkeypatch):
     assert isinstance(s.generation_temperature, float)
     assert s.chunk_target_tokens == 1000
     assert isinstance(s.chunk_target_tokens, int)
-    
 
 
-def test_settings_ignores_unknown_env_vars(monkeypatch):
+def test_settings_ignores_unknown_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     """Variáveis não declaradas no schema devem ser silenciosamente ignoradas.
 
     Isso evita que um typo numa env var (ex: OLAMA_URL em vez de OLLAMA_URL)
@@ -113,6 +112,6 @@ def test_settings_ignores_unknown_env_vars(monkeypatch):
     e usa o default — o que é coerente com `extra="ignore"` no model_config.
     """
     monkeypatch.setenv("THIS_IS_NOT_A_REAL_SETTING", "whatever")
-    s = Settings(_env_file=None)
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
     # Se não levantou exceção, está bom. Sanity check em algum default conhecido:
     assert s.ollama_url == "http://ollama:11434"
