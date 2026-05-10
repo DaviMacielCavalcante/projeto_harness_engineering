@@ -179,3 +179,47 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# --- Específico do projeto Tema 5 ---
+
+# Env files (.env.example versionado)
+.env.local
+.env.distributed
+.env.*.local
+
+# Docker volumes (montados como bind quando aplicável)
+qdrant_storage/
+ollama_models/
+rabbitmq_data/
+redis_data/
+grafana_data/
+loki_data/
+vllm_models/
+
+# Saídas de experimentos: PNGs ficam, CSVs/JSONLs/logs grandes não
+data/**/*.csv
+data/**/*.jsonl
+data/**/*.txt
+data/**/log.txt
+!data/.gitkeep
+
+# Corpus de teste: smoke usa samples/exemplo.pdf; corpus completo (~80 PDFs) fica fora
+samples/corpus/
+samples/*.pdf
+!samples/exemplo.pdf
+!samples/.gitkeep
+
+# Terraform state local
+infra/terraform/.terraform/
+infra/terraform/state/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/.terraform.lock.hcl
+
+# Ansible
+infra/ansible/*.retry
+infra/ansible/.vault_pass
+
+# IDE adicionais
+.DS_Store
+Thumbs.db
