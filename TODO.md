@@ -18,6 +18,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] Scaffolding Python: `pyproject.toml` (3.12), ruff + mypy strict + pytest, estrutura `src/`, `tests/`, `infra/`, `prompts/`, `scripts/`, etc.
 - [x] `CLAUDE.md`, `README.md`, `.env.example`, `.env.local`, `.gitignore`
 - [x] `uv sync` resolveu, ruff/mypy/pytest passam num scaffold limpo
+- [x] **Sessão 2026-05-09:** B1 shared modules `config.py`, `schemas.py`, `logging.py` (17 testes verdes, modo code-partner)
 
 ---
 
@@ -33,10 +34,10 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [ ] **[B]** Repo clonado, `uv sync` rodando em PC2/PC3
 
 ### Shared modules (Trilha B, com par com A nos primeiros)
-- [ ] `src/shared/config.py` (Settings via pydantic-settings) — TDD
-- [ ] `src/shared/logging.py` (structlog JSON)
-- [ ] `src/shared/schemas.py` (IngestRequest, QueryRequest, ChunkMessage, etc.) — TDD
-- [ ] `src/shared/ollama_client.py` (httpx + tenacity retry) — TDD
+- [x] `src/shared/config.py` (Settings via pydantic-settings) — TDD ✓ 3 testes verdes
+- [x] `src/shared/logging.py` (structlog JSON) ✓ smoke manual ok
+- [x] `src/shared/schemas.py` (IngestRequest, QueryRequest, ChunkMessage, etc.) — TDD ✓ 14 testes verdes
+- [ ] `src/shared/ollama_client.py` (httpx + tenacity retry) — TDD ⏳ em andamento
 - [ ] `src/shared/messaging.py` (aio-pika helpers)
 
 ### Gateway (Trilha A)
