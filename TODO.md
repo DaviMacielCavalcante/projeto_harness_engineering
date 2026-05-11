@@ -19,6 +19,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] `CLAUDE.md`, `README.md`, `.env.example`, `.env.local`, `.gitignore`
 - [x] `uv sync` resolveu, ruff/mypy/pytest passam num scaffold limpo
 - [x] **Sessão 2026-05-09:** B1 shared modules `config.py`, `schemas.py`, `logging.py` (17 testes verdes, modo code-partner)
+- [x] **Sessão 2026-05-10:** B1 `ollama_client.py` + `messaging.py` + Dockerfiles gateway/worker (21 testes verdes total, mypy strict ok, modo code-partner)
 
 ---
 
@@ -37,8 +38,8 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] `src/shared/config.py` (Settings via pydantic-settings) — TDD ✓ 3 testes verdes
 - [x] `src/shared/logging.py` (structlog JSON) ✓ smoke manual ok
 - [x] `src/shared/schemas.py` (IngestRequest, QueryRequest, ChunkMessage, etc.) — TDD ✓ 14 testes verdes
-- [ ] `src/shared/ollama_client.py` (httpx + tenacity retry) — TDD ⏳ em andamento
-- [ ] `src/shared/messaging.py` (aio-pika helpers)
+- [x] `src/shared/ollama_client.py` (httpx + tenacity retry) — TDD ✓ 4 testes verdes
+- [x] `src/shared/messaging.py` (aio-pika helpers) ✓ importa limpo, mypy strict ok
 
 ### Gateway (Trilha A)
 - [ ] `src/gateway/main.py` + `routes.py`: POST /ingest, POST /query, GET /health
@@ -53,8 +54,8 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [ ] `src/workers/query/main.py` (embed query → retrieval → generate → reply)
 
 ### Infra Docker (Trilha A)
-- [ ] `infra/docker/gateway.Dockerfile`, `worker.Dockerfile`
-- [ ] `docker-compose.yml` com profile `all` (Modo 1)
+- [x] `infra/docker/gateway.Dockerfile`, `worker.Dockerfile`
+- [ ] `docker-compose.yml` com profile `all` (Modo 1) ⏳ esqueleto criado com TODOs
 
 ### Prompts mínimos (Trilha A)
 - [ ] `prompts/system_qa_pt.md`, `prompts/system_qa_en.md`, `prompts/user_qa_template.md`

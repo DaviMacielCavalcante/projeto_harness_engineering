@@ -84,12 +84,12 @@ projeto_harness_engineering/
 - Create: `src/__init__.py`, `src/shared/__init__.py`, `src/gateway/__init__.py`, `src/workers/__init__.py`, `src/workers/ingest/__init__.py`, `src/workers/query/__init__.py`
 - Create: `tests/__init__.py`, `tests/unit/__init__.py`, `tests/integration/__init__.py`, `tests/conftest.py`
 
-- [ ] **Step 1: Verificar uv instalado**
+- [x] **Step 1: Verificar uv instalado**
 
 Run: `uv --version`
 Expected: versão `0.4.x` ou superior. Se não tiver: `winget install astral-sh.uv` (Windows) ou `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
-- [ ] **Step 2: Criar `pyproject.toml`**
+- [x] **Step 2: Criar `pyproject.toml`**
 
 Conteúdo:
 
@@ -142,7 +142,7 @@ ignore = ["E501"]
 package = false
 ```
 
-- [ ] **Step 3: Criar `.gitignore`**
+- [x] **Step 3: Criar `.gitignore`**
 
 ```
 # Python
@@ -176,7 +176,7 @@ rabbitmq_data/
 redis_data/
 ```
 
-- [ ] **Step 4: Criar `README.md` esqueleto**
+- [x] **Step 4: Criar `README.md` esqueleto**
 
 ```markdown
 # Tema 5 — RAG Distribuído
@@ -211,7 +211,7 @@ Configurado em B3. Para B1, use só Modo 1.
 Veja `docs/superpowers/specs/2026-05-09-rag-distribuido-tema5-design.md` para o design completo.
 ```
 
-- [ ] **Step 5: Criar diretórios + arquivos `__init__.py` vazios**
+- [x] **Step 5: Criar diretórios + arquivos `__init__.py` vazios**
 
 Run (PowerShell):
 ```powershell
@@ -220,7 +220,7 @@ New-Item -ItemType Directory -Force -Path src, src/shared, src/gateway, src/work
 "# placeholder for sample PDFs" | Set-Content samples/.gitkeep
 ```
 
-- [ ] **Step 6: Criar `tests/conftest.py` mínimo**
+- [x] **Step 6: Criar `tests/conftest.py` mínimo**
 
 ```python
 import sys
@@ -230,12 +230,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 ```
 
-- [ ] **Step 7: Sincronizar dependências**
+- [x] **Step 7: Sincronizar dependências**
 
 Run: `uv sync`
 Expected: cria `.venv/`, instala todas as dependências, gera `uv.lock`.
 
-- [ ] **Step 8: Validar pytest roda**
+- [x] **Step 8: Validar pytest roda**
 
 Run: `uv run pytest`
 Expected: `0 passed` (não há testes ainda, mas pytest deve rodar sem erro de collection).
@@ -250,7 +250,7 @@ Expected: `0 passed` (não há testes ainda, mas pytest deve rodar sem erro de c
 - Create: `.env.local`
 - Create: `tests/unit/test_config.py`
 
-- [ ] **Step 1: Escrever teste falhando**
+- [x] **Step 1: Escrever teste falhando**
 
 `tests/unit/test_config.py`:
 
@@ -281,12 +281,12 @@ def test_settings_overrides_via_env(monkeypatch):
     assert s.ollama_url == "http://1.2.3.4:11434"
 ```
 
-- [ ] **Step 2: Rodar teste — deve falhar**
+- [x] **Step 2: Rodar teste — deve falhar**
 
 Run: `uv run pytest tests/unit/test_config.py -v`
 Expected: FAIL com `ModuleNotFoundError: No module named 'src.shared.config'`.
 
-- [ ] **Step 3: Implementar `src/shared/config.py`**
+- [x] **Step 3: Implementar `src/shared/config.py`**
 
 ```python
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -337,12 +337,12 @@ class Settings(BaseSettings):
 settings = Settings()
 ```
 
-- [ ] **Step 4: Rodar teste — deve passar**
+- [x] **Step 4: Rodar teste — deve passar**
 
 Run: `uv run pytest tests/unit/test_config.py -v`
 Expected: 2 passed.
 
-- [ ] **Step 5: Criar `.env.example`**
+- [x] **Step 5: Criar `.env.example`**
 
 ```dotenv
 # Modo 1 (single-host) — defaults do compose já funcionam, deixe vazio.
@@ -356,7 +356,7 @@ Expected: 2 passed.
 LOG_LEVEL=INFO
 ```
 
-- [ ] **Step 6: Copiar para `.env.local`**
+- [x] **Step 6: Copiar para `.env.local`**
 
 Run (PowerShell): `Copy-Item .env.example .env.local`
 
@@ -367,7 +367,7 @@ Run (PowerShell): `Copy-Item .env.example .env.local`
 **Files:**
 - Create: `src/shared/logging.py`
 
-- [ ] **Step 1: Implementar setup de logging (não há teste — wrapper trivial)**
+- [x] **Step 1: Implementar setup de logging (não há teste — wrapper trivial)**
 
 `src/shared/logging.py`:
 
@@ -415,7 +415,7 @@ def clear_correlation_id() -> None:
     structlog.contextvars.clear_contextvars()
 ```
 
-- [ ] **Step 2: Validar que módulo carrega**
+- [x] **Step 2: Validar que módulo carrega**
 
 Run: `uv run python -c "from src.shared.logging import configure_logging; log = configure_logging('test'); log.info('hello', foo='bar')"`
 Expected: 1 linha JSON em stdout com campos `event=hello`, `foo=bar`, `service=test`, `level=info`, `timestamp=...`.
@@ -428,7 +428,7 @@ Expected: 1 linha JSON em stdout com campos `event=hello`, `foo=bar`, `service=t
 - Create: `src/shared/schemas.py`
 - Create: `tests/unit/test_schemas.py`
 
-- [ ] **Step 1: Escrever teste falhando**
+- [x] **Step 1: Escrever teste falhando**
 
 `tests/unit/test_schemas.py`:
 
@@ -494,12 +494,12 @@ def test_chunk_message_required_fields():
     assert msg.chunk_id == "a:0"
 ```
 
-- [ ] **Step 2: Rodar teste — deve falhar**
+- [x] **Step 2: Rodar teste — deve falhar**
 
 Run: `uv run pytest tests/unit/test_schemas.py -v`
 Expected: FAIL com `ModuleNotFoundError`.
 
-- [ ] **Step 3: Implementar `src/shared/schemas.py`**
+- [x] **Step 3: Implementar `src/shared/schemas.py`**
 
 ```python
 from typing import Literal
@@ -571,7 +571,7 @@ class QueryRequestMessage(BaseModel):
     session_id: str | None = None
 ```
 
-- [ ] **Step 4: Rodar teste — deve passar**
+- [x] **Step 4: Rodar teste — deve passar**
 
 Run: `uv run pytest tests/unit/test_schemas.py -v`
 Expected: 5 passed.
@@ -584,7 +584,7 @@ Expected: 5 passed.
 - Create: `src/shared/ollama_client.py`
 - Create: `tests/unit/test_ollama_client.py`
 
-- [ ] **Step 1: Escrever teste falhando com `respx` (mock HTTP)**
+- [x] **Step 1: Escrever teste falhando com `respx` (mock HTTP)**
 
 `tests/unit/test_ollama_client.py`:
 
@@ -642,12 +642,12 @@ async def test_embed_retries_on_500_then_succeeds():
     assert vec == [0.4]
 ```
 
-- [ ] **Step 2: Rodar teste — deve falhar**
+- [x] **Step 2: Rodar teste — deve falhar**
 
 Run: `uv run pytest tests/unit/test_ollama_client.py -v`
 Expected: FAIL com `ModuleNotFoundError`.
 
-- [ ] **Step 3: Implementar `src/shared/ollama_client.py`**
+- [x] **Step 3: Implementar `src/shared/ollama_client.py`**
 
 ```python
 import httpx
@@ -702,7 +702,7 @@ class OllamaClient:
         }
 ```
 
-- [ ] **Step 4: Rodar teste — deve passar**
+- [x] **Step 4: Rodar teste — deve passar**
 
 Run: `uv run pytest tests/unit/test_ollama_client.py -v`
 Expected: 3 passed.
@@ -716,7 +716,7 @@ Expected: 3 passed.
 
 Não há teste unitário direto — `aio-pika` exige broker real; será exercitado pelo smoke test e tasks subsequentes.
 
-- [ ] **Step 1: Implementar `src/shared/messaging.py`**
+- [x] **Step 1: Implementar `src/shared/messaging.py`**
 
 ```python
 from contextlib import asynccontextmanager
@@ -785,7 +785,7 @@ async def consume_forever(
                 await handler(msg, payload)
 ```
 
-- [ ] **Step 2: Validar que importa**
+- [x] **Step 2: Validar que importa**
 
 Run: `uv run python -c "from src.shared.messaging import connect, publish_json, consume_forever; print('ok')"`
 Expected: `ok`.
@@ -799,7 +799,7 @@ Expected: `ok`.
 - Create: `infra/docker/gateway.Dockerfile`
 - Create: `infra/docker/worker.Dockerfile`
 
-- [ ] **Step 1: Criar `infra/docker/gateway.Dockerfile`**
+- [x] **Step 1: Criar `infra/docker/gateway.Dockerfile`**
 
 ```dockerfile
 FROM python:3.12-slim
@@ -819,7 +819,7 @@ EXPOSE 8000
 CMD ["uv", "run", "uvicorn", "src.gateway.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
-- [ ] **Step 2: Criar `infra/docker/worker.Dockerfile`**
+- [x] **Step 2: Criar `infra/docker/worker.Dockerfile`**
 
 ```dockerfile
 FROM python:3.12-slim
