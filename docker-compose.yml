@@ -1,0 +1,126 @@
+# Modo 1 do projeto: tudo num host só, DNS interno do compose (rabbitmq:5672, qdrant:6333, ...).
+# Modo 2 (B3) vai dividir entre 3 PCs reais via Tailscale e usar IPs 100.x.y.z.
+#
+# Profiles:
+#   - "all"    → sobe tudo (dev local)
+#   - "server" → infra + gateway (PC1 no modo distribuído)
+#   - "worker" → só workers (PC2/PC3 no modo distribuído)
+
+name: rag-distribuido
+
+# YAML anchor: bloco reutilizado pelos dois workers (ingest e query).
+# A diferença entre eles é só WORKER_KIND no environment; o resto é idêntico.
+x-worker-base: &worker-base
+  build:
+    context: .
+    dockerfile: infra/docker/worker.Dockerfile
+  env_file:
+    - .env.local
+  depends_on: 
+    rabbitmq:
+      condition: service_healthy
+    qdrant:
+      condition: service_started
+    ollama: 
+      condition: service_started
+  restart: unless-stopped
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rag-rabbitmq
+    profiles: ["all", "server"]
+    ports:
+      - 5672:5672
+      - 15672:15672
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: rag-qdrant
+    profiles: ["all", "server"]
+    ports:
+      - 6333:6333
+    volumes:
+      - qdrant_storage:/qdrant/storage
+  redis:
+    image: redis:7-alpine
+    container_name: rag-redis
+    profiles: ["all", "server"]
+    ports:
+      - 6379:6379
+    volumes:
+      - redis_data:/data
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    profiles: ["all", "server"]
+    ports:
+      - 11434:11434
+    volumes:
+      - ollama_models:/root/.ollama
+    # GPU (opcional, descomente se tiver nvidia-container-toolkit):
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # -------------------------------------------------------------------------
+  # Aplicação
+  # -------------------------------------------------------------------------
+
+  gateway:
+    build:
+      context: .
+      dockerfile: infra/docker/gateway.Dockerfile
+    container_name: rag-gateway
+    profiles: ["all", "server"]
+    env_file:
+      - .env.local
+    environment:
+      SERVICE_NAME: gateway
+    ports:
+      - 8000:8000
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ingest-worker:
+    <<: *worker-base                     # merge com x-worker-base lá em cima
+    container_name: rag-ingest-worker
+    profiles: ["all", "worker"]
+    environment:
+      WORKER_KIND: ingest
+      SERVICE_NAME: ingest-worker
+
+  query-worker:
+    <<: *worker-base
+    container_name: rag-query-worker
+    profiles: ["all", "worker"]
+    environment:
+      WORKER_KIND: query
+      SERVICE_NAME: query-worker
+
+# -------------------------------------------------------------------------
+# Volumes nomeados — Docker gerencia, persistem entre `down`/`up`.
+# Pra apagar tudo de verdade: `docker compose down -v`.
+# -------------------------------------------------------------------------
+volumes:
+  rabbitmq_data:
+  qdrant_storage:
+  redis_data:
+  ollama_models:
+
+networks:
+  rag-network:
+  
