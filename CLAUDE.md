@@ -148,6 +148,7 @@ Os planos de bloco (B1–B5) explicitam onde cada coisa cai.
 - Não escreva em estado de módulo no import time. Prefira funções puras, ou classes que possuam o próprio estado.
 - Não execute commits no projeto — o usuário (Davi) commita manualmente. Veja `~/.claude/projects/.../memory/feedback_no_commits.md`.
 - Não use AWS — o projeto é deliberadamente local. Mapeamentos: SQS→RabbitMQ, S3→volumes, DynamoDB→Redis/Qdrant, CloudWatch→Prometheus+Grafana+Loki.
+- Em code review, **não aponte ajustes cosméticos** (whitespace sobrando, vírgula final faltando, ordem de imports, linha em branco extra, etc.) — o ruff cobre tudo isso quando Davi rodar `uv run ruff check --fix .` / `uv run ruff format .`. Foque em bugs reais, problemas de design, conexões com conceitos, e violações de convenção que o ruff/mypy não pegam.
 
 ## Notas específicas do projeto
 
