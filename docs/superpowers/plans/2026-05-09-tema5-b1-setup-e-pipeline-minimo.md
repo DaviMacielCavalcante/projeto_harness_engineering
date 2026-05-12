@@ -839,7 +839,7 @@ ENV PYTHONPATH=/app
 CMD ["sh", "-c", "uv run python -m src.workers.${WORKER_KIND}.main"]
 ```
 
-- [ ] **Step 3: Criar `docker-compose.yml`**
+- [x] **Step 3: Criar `docker-compose.yml`**
 
 ```yaml
 name: rag-distribuido
@@ -953,7 +953,7 @@ volumes:
 
 > Nota: a seção `deploy.resources` para GPU é ignorada se você rodar sem `nvidia-container-toolkit`. Para B1 sem GPU, tudo bem — Ollama cai pra CPU. Para puxar um modelo pequeno em CPU, você usará `llama3.2:1b` em Task 11.
 
-- [ ] **Step 4: Validar sintaxe do compose**
+- [x] **Step 4: Validar sintaxe do compose**
 
 Run: `docker compose --profile all config > /dev/null`
 Expected: sem erro.
@@ -967,7 +967,7 @@ Expected: sem erro.
 - Create: `src/gateway/routes.py`
 - Create: `tests/integration/test_gateway_smoke.py`
 
-- [ ] **Step 1: Implementar `src/gateway/main.py`**
+- [x] **Step 1: Implementar `src/gateway/main.py`**
 
 ```python
 from contextlib import asynccontextmanager
@@ -1002,7 +1002,7 @@ app = FastAPI(title="RAG Distribuído — Gateway", lifespan=lifespan)
 app.include_router(router)
 ```
 
-- [ ] **Step 2: Implementar `src/gateway/routes.py`**
+- [ ] **Step 2: Implementar `src/gateway/routes.py`** ⏳ `/health` pronto; `/ingest` e `/query` pendentes
 
 ```python
 import hashlib
@@ -1101,7 +1101,7 @@ async def query(req: QueryRequest, request: Request) -> QueryResponse:
         clear_correlation_id()
 ```
 
-- [ ] **Step 3: Validar que o gateway sobe num teste de smoke (sem worker)**
+- [x] **Step 3: Validar que o gateway sobe num teste de smoke (sem worker)**
 
 `tests/integration/test_gateway_smoke.py`:
 

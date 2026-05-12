@@ -20,6 +20,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] `uv sync` resolveu, ruff/mypy/pytest passam num scaffold limpo
 - [x] **Sessão 2026-05-09:** B1 shared modules `config.py`, `schemas.py`, `logging.py` (17 testes verdes, modo code-partner)
 - [x] **Sessão 2026-05-10:** B1 `ollama_client.py` + `messaging.py` + Dockerfiles gateway/worker (21 testes verdes total, mypy strict ok, modo code-partner)
+- [x] **Sessão 2026-05-11/12:** `docker-compose.yml` Modo 1 finalizado + gateway FastAPI mínimo (lifespan + `/health`, smoke de integração), relatório de aprendizagem atualizado
 
 ---
 
@@ -42,7 +43,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] `src/shared/messaging.py` (aio-pika helpers) ✓ importa limpo, mypy strict ok
 
 ### Gateway (Trilha A)
-- [ ] `src/gateway/main.py` + `routes.py`: POST /ingest, POST /query, GET /health
+- [ ] `src/gateway/main.py` + `routes.py`: POST /ingest, POST /query, GET /health ⏳ `main.py` (lifespan) + `routes.py` (/health) prontos, `/ingest` e `/query` pendentes
 
 ### Worker de ingestão (Trilha B)
 - [ ] `src/workers/ingest/chunking.py` (recursive, overlap) — TDD
@@ -55,7 +56,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 
 ### Infra Docker (Trilha A)
 - [x] `infra/docker/gateway.Dockerfile`, `worker.Dockerfile`
-- [ ] `docker-compose.yml` com profile `all` (Modo 1) ⏳ esqueleto criado com TODOs
+- [x] `docker-compose.yml` com profile `all` (Modo 1)
 
 ### Prompts mínimos (Trilha A)
 - [ ] `prompts/system_qa_pt.md`, `prompts/system_qa_en.md`, `prompts/user_qa_template.md`
