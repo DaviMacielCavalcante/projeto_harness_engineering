@@ -58,7 +58,7 @@ services:
     volumes:
       - redis_data:/data
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.23.2
     container_name: rag-ollama
     profiles: ["all", "server"]
     ports:
@@ -122,5 +122,6 @@ volumes:
   ollama_models:
 
 networks:
-  rag-network:
+  default:
+    name: rag-network
   
