@@ -22,6 +22,9 @@ Durante o Bloco B1, fui responsável pela base do projeto — toda a fundação 
 - **Testes unitários** em `tests/unit/` para `config`, `schemas` e `ollama_client` (com `respx` mockando HTTP).
 - **Dockerfiles** para `gateway` e `worker` em `infra/docker/`.
 - **`docker-compose.yml`** com profiles (`all`, `server`, `worker`) preparando a transição do Modo 1 (single-host) para o Modo 2 (3 PCs reais).
+- **`src/gateway/main.py`** — entrypoint FastAPI com `lifespan` que conecta no RabbitMQ no startup, declara as 3 filas do projeto e armazena a conexão em `app.state.rabbitmq` para as rotas consumirem.
+- **`src/gateway/routes.py`** — `APIRouter` com `/health` (liveness probe). `/ingest` e `/query` ficam pra próximos passos da Task 8.
+- **`tests/integration/test_gateway_smoke.py`** — smoke do `/health` (skipável via `RUN_INTEGRATION=1`), validando que o app sobe e o lifespan completa sem explodir.
 - **`TODO.md`** organizando as tarefas dos blocos B1–B5.
 
 Além disso, contribuí com revisões iterativas: endurecer `mypy strict` em todo `shared/` (eliminar `no-any-return`), ajustar o compose após discussão sobre a sintaxe mais enxuta de `networks:`, e pinar versões das imagens Docker em vez de usar `latest`.
@@ -81,6 +84,20 @@ A Task 7 (Docker Compose Modo 1) foi onde mais aprendi conceitos novos numa sess
 - **Profiles** (`all`, `server`, `worker`) preparando o mesmo `docker-compose.yml` pra rodar em modos diferentes — single-host em dev, distribuído entre 3 PCs em produção.
 - **`depends_on` com `condition: service_healthy`** vs `service_started` — entender que "container subiu" e "serviço pronto pra receber tráfego" são coisas diferentes. RabbitMQ tem healthcheck (`rabbitmq-diagnostics ping`) por isso; Qdrant não precisa porque sobe rápido.
 
+### 2.7 FastAPI: lifespan, `app.state` e o padrão "gateway"
+
+Implementar o gateway (Task 8 do B1) consolidou três coisas que eu não tinha clareza antes:
+
+- **`lifespan` com `@asynccontextmanager`** substitui os antigos `@app.on_event("startup")` / `@app.on_event("shutdown")`. A função tem um único `yield` no meio — tudo antes roda no startup, tudo depois roda no shutdown, e o `yield` é o "ponto onde o FastAPI toma controle e serve requests". Como o lifespan não devolve valor pro framework, a assinatura é `AsyncIterator[None]` e o `yield` vai sozinho, sem valor.
+- **Definir vs usar context manager async** — duas operações diferentes que eu confundia. O decorator `@asynccontextmanager` apenas **transforma** uma função em fábrica de context manager; quem efetivamente dispara o ciclo de vida (entra → executa código pré-yield → entrega o valor → sai → executa código pós-yield) é o `async with`. Os dois precisam coexistir.
+- **`app.state` como namespace compartilhado** — é uma instância de `types.SimpleNamespace` que vive na instância do app. Eu armazeno a conexão do RabbitMQ no startup (`app.state.rabbitmq = conn`) e qualquer rota acessa via `request.app.state.rabbitmq`. Isso evita global module-level, evita import circular entre `main.py` e `routes.py`, e funciona limpo em testes (basta sobrescrever o state no app de teste).
+
+Um conceito de arquitetura também ficou concreto: **por que se chama "gateway"**. É o mesmo termo de redes (porta de entrada/saída entre dois domínios), aplicado em camada diferente. Aqui, o gateway é o **único ponto HTTP** do sistema — clientes externos só conhecem ele, e por baixo do capô ele traduz HTTP em mensagens RabbitMQ pros workers (que não expõem HTTP). Mesma família dos *payment gateways*, *email gateways* (SendGrid), *SMS gateways* (Twilio): adapters que escondem complexidade na fronteira do sistema.
+
+Outro detalhe que quase me passou: **circular imports só acontecem quando `routes.py` importa de `main.py`**. Como uso `APIRouter` (objeto local em `routes.py`) e o `main.py` que faz `app.include_router(router)`, a direção dos imports é única (DAG limpa). É o padrão recomendado pelo próprio FastAPI exatamente por isso.
+
+Já a sintaxe de **varargs** (`*names`) com asterisco também caiu na ficha: na **definição** da função (`def f(*names)`), o asterisco "junta" os args extras numa tupla; na **chamada** da função (`f(*lista)`), ele "espalha" o iterável em args separados. Mesmo símbolo, operações inversas. Travou em mim quando errei a chamada de `declare_queues` passando uma tupla onde o esperado eram args separados.
+
 ---
 
 ## 3. Aprendizados de processo e metodologia
@@ -92,6 +109,8 @@ A disciplina insiste em **engenharia de contexto** e isso ficou concreto: antes 
 ### 3.2 TDD onde dá valor real (não dogmático)
 
 `tests/unit/test_ollama_client.py` cobre o cliente HTTP **antes** de eu integrar com o Ollama de verdade — é onde TDD brilha porque a lógica de retry/timeout é testável isoladamente com `respx`. Em contrapartida, não escrevi unit test pro `worker/main.py` (vai ser validado no smoke test ponta-a-ponta). Aprendi que TDD não é regra cega: é ferramenta que se aplica onde o custo de teste é menor que o custo de bug em produção.
+
+Um refinamento que veio na Task 8: mesmo quando o módulo cai no bucket de **smoke test** (não TDD canônico), ainda vale escrever o teste **antes** da implementação. A IA tinha proposto começar pela implementação do `main.py`, mas perguntei "não seria primeiro os testes?" — ela recalibrou e escreveu o `test_gateway_smoke.py` antes. O teste falhou com `ImportError` (red esperado), e os símbolos que ele exigia (`from src.gateway.main import app`, status 200, payload `{"status": "ok"}`) viraram diretamente a checklist de o que `main.py` + `routes.py` precisavam expor. **O teste vira spec executável**, mesmo no escopo "smoke", e essa disciplina precisa ser lembrada inclusive quando a IA propõe pular.
 
 ### 3.3 Trabalhar com IA como parceiro, não como gerador
 
