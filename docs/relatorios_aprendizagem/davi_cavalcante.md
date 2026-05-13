@@ -4,7 +4,7 @@
 
 - **Disciplina:** Engenharia de Contexto e Harness Engineering aplicada à Programação Distribuída e Paralela
 - **Tema:** 5 — Sistema RAG distribuído em 3 PCs físicos via Tailscale
-- **Período relatado:** 2026-05-09 a 2026-05-12 (Bloco B1 — setup e pipeline mínimo)
+- **Período relatado:** 2026-05-09 a 2026-05-13 (Bloco B1 — setup e pipeline mínimo)
 - **Instituição:** CESUPA, 2º bimestre de 2026
 
 ---
@@ -23,7 +23,7 @@ Durante o Bloco B1, fui responsável pela base do projeto — toda a fundação 
 - **Dockerfiles** para `gateway` e `worker` em `infra/docker/`.
 - **`docker-compose.yml`** com profiles (`all`, `server`, `worker`) preparando a transição do Modo 1 (single-host) para o Modo 2 (3 PCs reais).
 - **`src/gateway/main.py`** — entrypoint FastAPI com `lifespan` que conecta no RabbitMQ no startup, declara as 3 filas do projeto e armazena a conexão em `app.state.rabbitmq` para as rotas consumirem.
-- **`src/gateway/routes.py`** — `APIRouter` com `/health` (liveness probe). `/ingest` e `/query` ficam pra próximos passos da Task 8.
+- **`src/gateway/routes.py`** — `APIRouter` com `/health` (liveness probe), `/ingest` (fire-and-forget publicando no RabbitMQ) e `/query` (RPC sobre AMQP com reply queue exclusiva e timeout de 120s).
 - **`tests/integration/test_gateway_smoke.py`** — smoke do `/health` (skipável via `RUN_INTEGRATION=1`), validando que o app sobe e o lifespan completa sem explodir.
 - **`TODO.md`** organizando as tarefas dos blocos B1–B5.
 
@@ -98,6 +98,26 @@ Outro detalhe que quase me passou: **circular imports só acontecem quando `rout
 
 Já a sintaxe de **varargs** (`*names`) com asterisco também caiu na ficha: na **definição** da função (`def f(*names)`), o asterisco "junta" os args extras numa tupla; na **chamada** da função (`f(*lista)`), ele "espalha" o iterável em args separados. Mesmo símbolo, operações inversas. Travou em mim quando errei a chamada de `declare_queues` passando uma tupla onde o esperado eram args separados.
 
+### 2.8 Implementação de `/ingest` e `/query`: pattern RPC sobre AMQP e cleanup aninhado
+
+Na continuação da Task 8, parei com a skill `code-partner` ativada pra implementar o miolo dos dois endpoints. Foi a sessão onde mais errei e mais aprendi nesta semana — vários bugs entraram, foram revisados, e cada correção consolidou um conceito.
+
+**Pattern RPC sobre AMQP.** HTTP é request/response síncrono; RabbitMQ é fire-and-forget assíncrono. Como o `/query` consegue **esperar** uma resposta numa fila? A solução foi clara depois que escrevi: o gateway abre um **channel novo** só pra declarar uma `reply_queue` com `exclusive=True, auto_delete=True`, publica a pergunta na fila normal incluindo `reply_to=reply_queue.name` no header AMQP, e fica iterando na reply_queue com `timeout=120`. O worker, do outro lado, lê o `reply_to` e publica a resposta exatamente nessa fila. O motivo do channel próprio também ficou concreto: a `reply_queue` exclusiva morre quando o channel fecha, então cada `/query` simultâneo tem isolamento total — não dá pra dois requests pegarem a resposta um do outro.
+
+**`try/finally` aninhado.** Minha primeira tentativa enfiou `channel.close()` dentro do `async for`, e o `clear_correlation_id()` foi parar dentro de um `finally` que só rodava depois do `async with`. Resultado: se desse timeout, **nenhum dos dois rodava**. A IA me forçou a verbalizar o conceito: `finally` só dispara se o `try` correspondente foi **entrado**; exceção que sobe antes do `try` não aciona ele. A regra prática que ficou: cada `try` "guarda" o recurso criado logo antes dele, e cleanup acontece de dentro pra fora (channel primeiro, contextvar do log por último). Foi a primeira vez que `try/finally` deixou de ser receita e virou ferramenta de gerência de recursos.
+
+**Análise de fluxo do mypy.** Depois que o código rodava na minha cabeça, o `mypy --strict` reclamou: "Missing return statement". Eu queria descartar como ruído, mas a análise era correta — o `async for` pode terminar sem iterar nenhuma vez, e nesse caminho a função saía sem `return` nem `raise`. A correção foi adicionar um `raise HTTPException(504)` **fora do `async with` e dentro do `try`**, cobrindo tanto o caso "aio-pika levantou TimeoutError" quanto o caso "loop esgotou silencioso". O ponto que ficou: type checker estático não é decorativo, é uma camada de prova que pega caminhos que o teste de runtime talvez nem exercite.
+
+**`return` sai da função, não do bloco.** Em algum momento me confundi achando que o `raise` da rede de segurança ia disparar sempre que o `async with` terminasse, mesmo após `return`. Errado. `return` em Python sai da função inteira — ele não é como `break`. Os `finally` em torno rodam no caminho de saída, mas o código depois do `async with` (incluindo o `raise`) só é alcançado se o controle realmente chegar até lá. Conceito que eu sabia "no abstrato" mas confundi na prática quando os blocos aninhados ficaram densos.
+
+**`asyncio.TimeoutError` foi unificado com `TimeoutError` builtin no Python 3.11.** A IA me orientou a `except asyncio.TimeoutError`, e o `ruff` reescreveu pra `except TimeoutError` (regra UP041) e removeu o `import asyncio` (F401). Fui investigar e aprendi: a partir do 3.11, `asyncio.TimeoutError is TimeoutError` (mesmo objeto). Antes eram classes separadas com hierarquias diferentes. Como o projeto pina `>=3.12`, a forma moderna é usar o builtin direto. Lição embolada: nem toda recomendação de IA é a forma mais idiomática — o `ruff` muitas vezes carrega regras de modernização mais atualizadas que o conhecimento "histórico" reproduzido em respostas.
+
+**Bugs clássicos de async/concorrência.** Em ambos os endpoints esqueci o `await` no `publish_json`. Sem `await`, a coroutine é criada e descartada — a mensagem **nunca chega no broker**, mas o endpoint responde 200/202 alegremente. É um bug silencioso que só aparece quando você vai ver fila vazia. O `mypy --strict` pegou em uma das vezes (coroutine retornada e ignorada); na outra eu mesmo tive que perceber. Ficou claro por que o CLAUDE.md insiste em "async-first, sem mistura": código async sem `await` é uma armadilha onde o tipo da expressão é "promessa não cumprida".
+
+**Detalhes de Python que pareciam triviais mas pegaram.** Três coisas pequenas: (1) `hashlib.sha256(s)` exige `bytes`, não `str` — precisa `.encode()` antes — e devolve um objeto `HASH`, não uma string — precisa `.hexdigest()` depois. (2) `b'req.filename'` é uma **literal de bytes** com o texto ASCII `req.filename`, **não** uma referência à variável; a interpolação só existe em f-strings. (3) Posição do slice em f-string: `f"i-{uuid.uuid4().hex}"[:8]` corta a string inteira (6 chars hex), enquanto `f"i-{uuid.uuid4().hex[:8]}"` corta antes da interpolação (8 chars hex). O ponto: micro-confusões com tipo (bytes vs str, literal vs expressão, ordem de operações) custam muito tempo se não forem identificadas cedo — type hints e revisão crítica ajudam, mas no fim é preciso conhecer a semântica fina das primitivas.
+
+**Refactor por extração de variáveis.** A linha do `doc_id` ficou ilegível depois de empilhar `sha256 + encode + hexdigest + slice`. A IA não propôs a refatoração — eu pedi, e ela me ofereceu **opções de nome** (sem escrever a versão final). Quebrei em quatro linhas (`b64_prefix → fingerprint_source → sha256_hex → doc_id`), e a cadeia conta a história sozinha. Internalizou o princípio: legibilidade ≠ verbosidade. Variáveis intermediárias com nomes bons substituem comentário e documentam intenção.
+
 ---
 
 ## 3. Aprendizados de processo e metodologia
@@ -124,7 +144,7 @@ NumPy docstrings, type hints em todas as assinaturas, linha 100, `snake_case`, a
 
 ## 4. O que ainda quero aprender (em aberto pros próximos blocos)
 
-- **B1 finalização**: Tasks 8–14 (gateway FastAPI, chunking recursivo, parsing PDF, workers fim-a-fim, prompts versionados, smoke test, Makefile).
+- **B1 finalização**: Tasks 9–14 (chunking recursivo, parsing PDF, workers fim-a-fim, prompts versionados, smoke test, Makefile). Task 8 (gateway FastAPI completo) fechada.
 - **B2**: cache distribuído (L1 in-memory, L2 Redis), reranker com cross-encoder bge-reranker-v2-m3, observabilidade Prometheus + Grafana.
 - **B3**: o pulo do gato deste projeto — passar de Modo 1 (Compose num host) pra Modo 2 (3 PCs reais via Tailscale). Aqui vou aprender de verdade sobre rede entre hosts, IaC com Terraform/Ansible, e tolerância a falhas em ambiente distribuído real (não simulado).
 - **B4**: experimentos quantitativos (latência, throughput, tolerância a falhas) e — se o cronograma permitir — comparação Ollama vs vLLM (bônus +10).
