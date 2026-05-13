@@ -118,6 +118,22 @@ Na continuação da Task 8, parei com a skill `code-partner` ativada pra impleme
 
 **Refactor por extração de variáveis.** A linha do `doc_id` ficou ilegível depois de empilhar `sha256 + encode + hexdigest + slice`. A IA não propôs a refatoração — eu pedi, e ela me ofereceu **opções de nome** (sem escrever a versão final). Quebrei em quatro linhas (`b64_prefix → fingerprint_source → sha256_hex → doc_id`), e a cadeia conta a história sozinha. Internalizou o princípio: legibilidade ≠ verbosidade. Variáveis intermediárias com nomes bons substituem comentário e documentam intenção.
 
+### 2.9 Estratégia de chunking no RAG: granularidade e overlap
+
+Antes da Task 9 eu sabia que "chunking divide o texto", mas não tinha claro **por que dividir** nem **por que esses parâmetros específicos** (target 800 tokens, overlap 120). Conversando sobre o desenho da função, dois motivos práticos viraram concretos:
+
+**Granularidade do retrieval.** Se eu indexasse um PDF inteiro como um vetor só no Qdrant, a busca semântica conseguiria me dizer "esse documento é relevante", mas não **qual trecho**. O LLM receberia o documento inteiro no contexto — polui a janela, consome tokens caros, e a resposta vira genérica. Com chunks de ~800 tokens, o retrieval traz **o parágrafo certo** pra responder a pergunta. A diferença entre "este livro fala sobre X" e "este parágrafo responde X" é a diferença entre um sistema RAG ruim e um bom.
+
+**Qualidade do embedding.** Embeddings tipo `nomic-embed-text` aceitam até 8k tokens, mas o que aprendi é que **aceitar não é o mesmo que representar bem**. O vetor 768d gerado tenta resumir o conteúdo todo numa só direção do espaço — quanto maior o texto, mais o vetor representa "a média" e perde detalhes específicos. Chunks menores produzem vetores mais "afiados", semanticamente focados, que casam melhor com perguntas específicas.
+
+**Por que o splitter é "recursive character" e não um split simples.** A estratégia tenta quebrar primeiro em **fronteiras semânticas** (parágrafo `\n\n` → linha `\n` → frase `. ` → palavra ` `) e só cai pra corte arbitrário por caractere se nenhuma das fronteiras anteriores estiver disponível. A intuição: quebrar no meio de uma frase mutila o significado; entre parágrafos preserva a coerência. A recursão é o mecanismo que tenta o "menos invasivo" primeiro.
+
+**Por que o overlap existe.** Sem overlap, uma frase importante que cai exatamente na fronteira entre dois chunks é cortada — **nenhum** dos dois chunks fica com a frase inteira, e o retrieval pode perder o conteúdo relevante. Com ~15% de overlap (120 tokens dos 800), o final do chunk anterior aparece no começo do próximo, garantindo que ao menos um deles contenha a frase contígua. É uma redundância barata que paga em recall.
+
+**Por que a função tem parâmetros e não constantes.** `chunk_text` recebe `target_tokens` e `overlap_tokens` em vez de hardcodar 800/120. Em B4, parte dos experimentos quantitativos vai variar esses números (400 vs 800 vs 1200) e medir impacto no recall do retrieval. Manter a função parametrizada é o que vai permitir rodar o experimento mudando só o call site, sem tocar na lógica. Aprendi a olhar API design não só pelo "o que o caller quer agora" mas pelo "o que o experimento futuro vai precisar".
+
+Esse foi o primeiro momento em que entendi o chunking não como detalhe técnico, mas como **decisão de produto**: a estratégia define se o RAG vai trazer parágrafos cirúrgicos ou documentos atacadistas, se vai ter redundância suficiente nas fronteiras, e se vai ser experimentável depois. Tudo isso antes de uma linha de implementação.
+
 ---
 
 ## 3. Aprendizados de processo e metodologia
