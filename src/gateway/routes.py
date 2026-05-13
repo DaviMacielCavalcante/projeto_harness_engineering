@@ -53,26 +53,39 @@ async def ingest(req: IngestRequest, request: Request) -> IngestResponse:
     IngestResponse
         `correlation_id` (para rastrear nos logs) e `doc_id` (estável por conteúdo).
     """
-    # TODO 1: gerar correlation_id no formato "i-<8 chars hex>" usando uuid.uuid4().hex
-    # TODO 2: bind_correlation_id(correlation_id) — pra todos os logs daqui pra
-    #         frente carregarem esse id. Lembre do try/finally pra clear no fim.
-    # TODO 3: gerar doc_id como sha256(filename + content_b64[:1024])[:16].
-    #         Por que só os primeiros 1024 chars do b64? PDFs grandes geram
-    #         strings enormes; o prefixo é estável o bastante pra deduplicar.
-    # TODO 4: monte o payload com DocumentMessage(...).model_dump() — fonte
-    #         única de verdade pros campos. Vai te pegar o erro cedo se você
-    #         errar nome de campo.
-    # TODO 5: publish_json(
-    #             conn           = request.app.state.rabbitmq,
-    #             queue          = settings.queue_ingest_documents,
-    #             payload        = <o dict do model_dump>,
-    #             correlation_id = correlation_id,
-    #         )
-    # TODO 6: log.info("ingest.accepted", doc_id=..., filename=...)
-    #         e retornar IngestResponse(correlation_id=..., doc_id=...).
-    #         O campo `status` tem default "accepted" no schema, não precisa passar.
-    # TODO 7: clear_correlation_id() no finally
-    raise NotImplementedError
+    correlation_id = f"i-{uuid.uuid4().hex[:8]}"
+
+    try:
+        bind_correlation_id(correlation_id=correlation_id)
+
+        b64_prefix = req.content_b64[:1024]
+
+        fingerprint_source = req.filename + b64_prefix
+
+        sha256_hex = hashlib.sha256(fingerprint_source.encode()).hexdigest()
+
+        doc_id = sha256_hex[:16]
+
+        payload = DocumentMessage(
+            correlation_id=correlation_id,
+            content_b64=req.content_b64,
+            doc_id=doc_id,
+            filename=req.filename,
+            source_type=req.source_type,
+        ).model_dump()
+
+        await publish_json(
+            payload=payload,
+            correlation_id=correlation_id,
+            conn=request.app.state.rabbitmq,
+            queue=settings.queue_ingest_documents,
+        )
+
+        log.info("ingest.accepted", doc_id=doc_id, filename=req.filename)
+
+        return IngestResponse(correlation_id=correlation_id, doc_id=doc_id)
+    finally:
+        clear_correlation_id()
 
 
 @router.post("/query", response_model=QueryResponse)
@@ -100,35 +113,52 @@ async def query(req: QueryRequest, request: Request) -> QueryResponse:
     HTTPException
         504 se nenhuma resposta chegar dentro do timeout.
     """
-    # TODO 1: gerar correlation_id no formato "q-<8 chars hex>" + bind_correlation_id
-    # TODO 2: pegar a connection: conn = request.app.state.rabbitmq
-    # TODO 3: abrir um channel NOVO (await conn.channel()) — esse canal é só
-    #         pra DECLARAR e CONSUMIR a reply queue. Não é o canal do publish:
-    #         o publish_json abre/fecha o canal dele próprio internamente.
-    #         Por que canal próprio aqui? A reply queue é exclusiva ao canal
-    #         que a declarou; quando esse canal fecha, ela some (auto_delete).
-    #         Isso garante isolamento — duas /query simultâneas não se enxergam.
-    # TODO 4: declarar reply_queue exclusiva e auto-delete com nome único:
-    #             reply_queue = await channel.declare_queue(
-    #                 name=f"query.responses.{correlation_id}",
-    #                 exclusive=True,
-    #                 auto_delete=True,
-    #             )
-    # TODO 5: monte o payload com QueryRequestMessage(...).model_dump().
-    #         Lembre de incluir reply_to=reply_queue.name no model.
-    # TODO 6: publish_json(
-    #             conn, settings.queue_query_requests,
-    #             payload        = <model_dump>,
-    #             correlation_id = correlation_id,
-    #             reply_to       = reply_queue.name,  # também vai no header AMQP
-    #         )
-    # TODO 7: iterar reply_queue com timeout=120:
-    #             async with reply_queue.iterator(timeout=120) as it:
-    #                 async for msg in it:
-    #                     async with msg.process():
-    #                         payload = json.loads(msg.body)
-    #                         return QueryResponse(**payload)
-    #         Se o iterator esgotar sem mensagem -> raise HTTPException(504).
-    # TODO 8: fechar o channel no finally interno (await channel.close())
-    # TODO 9: clear_correlation_id no finally externo
-    raise NotImplementedError
+    correlation_id = f"q-{uuid.uuid4().hex[:8]}"
+
+    timeout_detail = "query timeout"
+
+    try:
+        bind_correlation_id(correlation_id=correlation_id)
+
+        log.info("query.received", question_len=len(req.question), top_k=req.top_k)
+
+        conn = request.app.state.rabbitmq
+
+        channel = await conn.channel()
+        try:
+            reply_queue = await channel.declare_queue(
+                name=f"query.responses.{correlation_id}", exclusive=True, auto_delete=True
+            )
+
+            payload = QueryRequestMessage(
+                session_id=req.session_id,
+                correlation_id=correlation_id,
+                question=req.question,
+                top_k=req.top_k,
+                reply_to=reply_queue.name,
+            ).model_dump()
+
+            await publish_json(
+                conn=conn,
+                queue=settings.queue_query_requests,
+                correlation_id=correlation_id,
+                reply_to=reply_queue.name,
+                payload=payload,
+            )
+
+            try:
+                async with reply_queue.iterator(timeout=120) as it:
+                    async for msg in it:
+                        async with msg.process():
+                            response_payload = json.loads(msg.body)
+                            log.info("query.answered")
+                            return QueryResponse(**response_payload)
+                raise HTTPException(status_code=504, detail=timeout_detail)
+            except TimeoutError:
+                log.warning("query.timeout")
+                raise HTTPException(status_code=504, detail=timeout_detail) from None
+        finally:
+            await channel.close()
+
+    finally:
+        clear_correlation_id()
