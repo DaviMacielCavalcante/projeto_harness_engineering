@@ -149,19 +149,13 @@ def chunk_text(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
         chunks.append(buffer)
     
     if overlap_chars > 0 and len(chunks) > 1:     
-        with_overlap = chunks[0]
+        with_overlap = [chunks[0]]
         
-        for i in range(1, len(chunks) - 1):
-            overlap_chars = chunks[i-1][-overlap_chars]
-            chunks = with_overlap
+        for i in range(1, len(chunks)):
+            text_tail = chunks[i-1][-overlap_chars:]
+            overlapped_chunks = text_tail + chunks[i]
+            with_overlap.append(overlapped_chunks)
             
-    return chunks       
-    
-    # TODO 3.6: aplicar overlap. Se overlap_chars > 0 e len(chunks) > 1:
-    #           construa with_overlap começando com chunks[0] inalterado;
-    #           para cada i >= 1, prepend dos últimos overlap_chars do
-    #           chunks[i-1] no começo de chunks[i].
-    #           Substitua `chunks = with_overlap` no fim.
-
-    # TODO 3.7: return chunks.
-    raise NotImplementedError
+        chunks = with_overlap
+            
+    return chunks 

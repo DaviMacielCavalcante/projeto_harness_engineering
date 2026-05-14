@@ -22,10 +22,13 @@ def test_chunk_text_short_returns_single_chunk() -> None:
 def test_chunk_text_breaks_on_paragraph_boundary() -> None:
     text = ("a" * 1000) + "\n\n" + ("b" * 1000) + "\n\n" + ("c" * 1000)
     chunks = chunk_text(text, target_tokens=300, overlap_tokens=20)
+    # 1 chunk por parágrafo (fronteira respeitada — não partiu no meio do bloco)
     assert len(chunks) >= 3
-    # cada chunk começa com letra esperada (sem partir parágrafo no meio)
-    starts = [c.lstrip()[0] for c in chunks if c.strip()]
-    assert "a" in starts and "b" in starts and "c" in starts
+    # cada bloco íntegro aparece em algum chunk (overlap pode prefixar com cauda
+    # do anterior, mas o conteúdo do parágrafo continua presente como substring)
+    assert any("a" * 1000 in c for c in chunks)
+    assert any("b" * 1000 in c for c in chunks)
+    assert any("c" * 1000 in c for c in chunks)
 
 
 def test_chunk_text_overlap_is_applied() -> None:
