@@ -25,6 +25,8 @@ Durante o Bloco B1, fui responsável pela base do projeto — toda a fundação 
 - **`src/gateway/main.py`** — entrypoint FastAPI com `lifespan` que conecta no RabbitMQ no startup, declara as 3 filas do projeto e armazena a conexão em `app.state.rabbitmq` para as rotas consumirem.
 - **`src/gateway/routes.py`** — `APIRouter` com `/health` (liveness probe), `/ingest` (fire-and-forget publicando no RabbitMQ) e `/query` (RPC sobre AMQP com reply queue exclusiva e timeout de 120s).
 - **`tests/integration/test_gateway_smoke.py`** — smoke do `/health` (skipável via `RUN_INTEGRATION=1`), validando que o app sobe e o lifespan completa sem explodir.
+- **`src/workers/ingest/chunking.py`** — helpers iniciais do recursive splitter: `count_tokens_approx` (aproximação 1 token ≈ 4 chars, com `max(1, ...)` pra evitar zero) e `_split_with_separators` (recursão sobre lista de separadores, anexando o separador de volta pra que a reconstituição via `"".join(parts)` seja lossless). `chunk_text` ainda em andamento.
+- **`tests/unit/test_chunking.py`** — testes-spec do splitter (5 casos cobrindo atalho, fronteira de parágrafo, overlap, e limite de tolerância de 25% sobre o alvo).
 - **`TODO.md`** organizando as tarefas dos blocos B1–B5.
 
 Além disso, contribuí com revisões iterativas: endurecer `mypy strict` em todo `shared/` (eliminar `no-any-return`), ajustar o compose após discussão sobre a sintaxe mais enxuta de `networks:`, e pinar versões das imagens Docker em vez de usar `latest`.
@@ -134,6 +136,20 @@ Antes da Task 9 eu sabia que "chunking divide o texto", mas não tinha claro **p
 
 Esse foi o primeiro momento em que entendi o chunking não como detalhe técnico, mas como **decisão de produto**: a estratégia define se o RAG vai trazer parágrafos cirúrgicos ou documentos atacadistas, se vai ter redundância suficiente nas fronteiras, e se vai ser experimentável depois. Tudo isso antes de uma linha de implementação.
 
+### 2.10 Implementação dos primeiros helpers do splitter: `count_tokens_approx` e `_split_with_separators`
+
+Comecei a Task 9 pela base do recursive splitter, antes do `chunk_text` propriamente dito. Duas funções pequenas, mas cada uma trouxe um conceito que ficou.
+
+**`count_tokens_approx` — heurística 1:4 e o `max(1, ...)`.** O projeto evita puxar `tiktoken` nesta fase e usa a aproximação "1 token ≈ 4 caracteres". É bruta, mas suficiente pra dimensionar chunks no B1; se precisar de precisão em B2, troca-se só a função. O detalhe que me fez parar foi o `return max(1, tokens)`: pra string vazia, `len("") // 4 == 0`, e zero token causa divisão por zero em cálculos downstream (proporções, médias). Forçar um piso de 1 é uma daquelas decisões defensivas que parecem bobas mas evitam crash num caso de borda real.
+
+**`_split_with_separators` — recursão como cascata de fallback.** Aqui ficou concreto o "recursive" do "recursive character splitter": a função tenta o separador mais semântico primeiro (`\n\n`); se não está presente no texto, **recursivamente** chama a si mesma com a lista encurtada (`separators[1:]`), tentando o próximo. A recursão é o jeito natural de modelar "tentei A, falhou, agora tento B, falhou, agora C..." sem escrever um if/elif em cascata gigante. Pra cada novo separador adicionado no futuro, basta colocar na lista — a lógica não muda.
+
+**O sentinela `""` como caso-base.** A lista `_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]` termina com string vazia. Mas `text.split("")` levanta `ValueError` em Python, então a função tem um ramo especial: se o separador é o vazio, devolve `[text]` inteiro — a peça sai intacta, e o corte hard por caractere fica pro `chunk_text` resolver depois. Esse padrão "**valor sentinela no fim da lista garante terminação da recursão**" foi a primeira vez que vi recursão num contexto utilitário (não algoritmo de árvore/grafo). Sem o `""` no fim, eu precisaria de uma segunda condição de parada — o sentinela elimina o caso especial.
+
+**Split lossless: anexar o separador de volta.** `text.split(sep)` consome o separador e o **descarta**. Se eu usasse o resultado direto, perderia os `\n\n` originais e a reconstituição via `"".join(parts)` daria um texto diferente do original. Pra preservar a invariante "join devolve o texto inteiro", anexo o separador no fim de cada peça exceto a última (a última não tem separador depois dela no texto). O princípio que ficou: ao decompor uma estrutura pra processar peça a peça, **manter as fronteiras anexadas é o que torna a operação reversível**. Vejo isso agora em parsers, tokenizers, e diff/patch — qualquer transformação que precise ser desfeita.
+
+**Tipagem do retorno vazio.** Mypy strict me obrigou a pensar no caso `text == ""`: a função retorna `list[str]`, então tenho que devolver explicitamente `[]`, não `None`. Pareceu trivial, mas é exatamente o tipo de contrato que o type checker enforce automaticamente e me poupa de quebrar quem consome a função esperando iterável.
+
 ---
 
 ## 3. Aprendizados de processo e metodologia
@@ -160,7 +176,7 @@ NumPy docstrings, type hints em todas as assinaturas, linha 100, `snake_case`, a
 
 ## 4. O que ainda quero aprender (em aberto pros próximos blocos)
 
-- **B1 finalização**: Tasks 9–14 (chunking recursivo, parsing PDF, workers fim-a-fim, prompts versionados, smoke test, Makefile). Task 8 (gateway FastAPI completo) fechada.
+- **B1 finalização**: Tasks 9–14 (chunking recursivo em curso — helpers `count_tokens_approx` e `_split_with_separators` prontos, `chunk_text` em desenvolvimento; parsing PDF, workers fim-a-fim, prompts versionados, smoke test, Makefile ainda pendentes). Task 8 (gateway FastAPI completo) fechada.
 - **B2**: cache distribuído (L1 in-memory, L2 Redis), reranker com cross-encoder bge-reranker-v2-m3, observabilidade Prometheus + Grafana.
 - **B3**: o pulo do gato deste projeto — passar de Modo 1 (Compose num host) pra Modo 2 (3 PCs reais via Tailscale). Aqui vou aprender de verdade sobre rede entre hosts, IaC com Terraform/Ansible, e tolerância a falhas em ambiente distribuído real (não simulado).
 - **B4**: experimentos quantitativos (latência, throughput, tolerância a falhas) e — se o cronograma permitir — comparação Ollama vs vLLM (bônus +10).
