@@ -28,9 +28,10 @@ def count_tokens_approx(text: str) -> int:
         Quantidade aproximada de tokens. Mínimo de 1 mesmo para string vazia
         (evita dividir por zero em cálculos a jusante).
     """
-    # TODO 1: implementar. Dica: len(text) // 4, com piso de 1 (use max).
-    raise NotImplementedError
-
+    
+    tokens = len(text) // 4
+    
+    return max(1, tokens)
 
 def _split_with_separators(text: str, separators: list[str]) -> list[str]:
     """Divide o texto pelo primeiro separador disponível, recursivamente.
@@ -54,15 +55,34 @@ def _split_with_separators(text: str, separators: list[str]) -> list[str]:
         anexado ao fim — assim a reconstituição via ``"".join(parts)`` é
         lossless.
     """
-    # TODO 2.1: caso-base — se text vazio, retornar lista vazia.
-    # TODO 2.2: pegar o separador da posição 0. Se for "" (sentinela),
-    #           devolver [text] — quem corta hard é o caller (chunk_text).
-    # TODO 2.3: se o separador NÃO está no texto, recursão com separators[1:].
-    # TODO 2.4: text.split(sep) divide. Mas perde os separadores no meio.
-    #           Itere as parts e, em todas exceto a última, reanexe `sep` no
-    #           fim. Assim "".join(out) reconstitui o texto original.
-    raise NotImplementedError
-
+    
+    if text == "":
+        return []
+    
+    sep = separators[0]
+    
+    if sep == "":
+        
+        text_list = []
+        
+        text_list.append(text)
+        
+        return text_list
+    
+    if sep not in text:
+        return _split_with_separators(text=text, separators=separators[1:])
+    
+    splitted_text = text.split(sep=sep)
+    
+    remaded_text = []
+    
+    for index,char in enumerate(splitted_text):
+        if index == len(splitted_text) - 1:
+            remaded_text.append(char)
+        else:
+            remaded_text.append(char + sep)
+    
+    return remaded_text
 
 def chunk_text(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
     """Divide texto em chunks recursivamente respeitando fronteiras semânticas.
@@ -96,31 +116,47 @@ def chunk_text(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
         Chunks na ordem original. Tolerância: até 25% acima de
         `target_tokens` por chunk para acomodar fronteira semântica.
     """
-    # TODO 3.1: converter tokens em chars (multiplica por 4) para
-    #           `target_chars` e `overlap_chars`.
+    
+    target_chars = target_tokens * 4
+    overlap_chars = overlap_tokens * 4
+    
+    if count_tokens_approx(text=text) <= target_tokens:
+        return [text]
 
-    # TODO 3.2: atalho — se count_tokens_approx(text) <= target_tokens,
-    #           retorne [text] direto.
+    splitted_text = _split_with_separators(text=text, separators=_SEPARATORS)
+    
+    chunks: list[str] = []
+    buffer = ""
 
-    # TODO 3.3: chame `_split_with_separators(text, _SEPARATORS)` para obter
-    #           a lista `pieces`. Inicialize `chunks: list[str] = []` e um
-    #           `buffer = ""`.
-
-    # TODO 3.4: iterar as `pieces`. Para cada `piece`:
-    #     a) se piece é "", continue (separador puxou string vazia, ignora).
-    #     b) se len(piece) > target_chars: a peça já estoura sozinha.
-    #        - se há buffer pendente, dê push em chunks e zere o buffer.
-    #        - faça hard split por chars com passo (target_chars - overlap_chars)
-    #          chamando chunks.append(piece[i : i + target_chars]) em loop.
-    #        - continue para a próxima piece.
-    #     c) se len(buffer) + len(piece) <= target_chars:
-    #        - buffer += piece (acumula).
-    #     d) senão:
-    #        - se buffer não vazio, chunks.append(buffer).
-    #        - buffer = piece (começa novo).
-
-    # TODO 3.5: fim do loop — se buffer ainda tem conteúdo, chunks.append(buffer).
-
+    for piece in splitted_text:
+        if piece == "":
+            continue
+        if len(piece) > target_chars:
+            if buffer != "":
+                chunks.append(buffer)
+                buffer = ""
+            for i in range(0, len(piece), target_chars - overlap_chars):
+                chunks.append(piece[i : i+target_chars])
+            continue
+        if (len(buffer) + len(piece)) <= target_chars:
+            buffer += piece
+        else:
+            if buffer != "":
+                chunks.append(buffer)
+                buffer = piece
+                
+    if buffer != "":               
+        chunks.append(buffer)
+    
+    if overlap_chars > 0 and len(chunks) > 1:     
+        with_overlap = chunks[0]
+        
+        for i in range(1, len(chunks) - 1):
+            overlap_chars = chunks[i-1][-overlap_chars]
+            chunks = with_overlap
+            
+    return chunks       
+    
     # TODO 3.6: aplicar overlap. Se overlap_chars > 0 e len(chunks) > 1:
     #           construa with_overlap começando com chunks[0] inalterado;
     #           para cada i >= 1, prepend dos últimos overlap_chars do
