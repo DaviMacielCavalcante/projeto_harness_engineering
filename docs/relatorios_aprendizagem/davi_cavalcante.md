@@ -4,7 +4,7 @@
 
 - **Disciplina:** Engenharia de Contexto e Harness Engineering aplicada à Programação Distribuída e Paralela
 - **Tema:** 5 — Sistema RAG distribuído em 3 PCs físicos via Tailscale
-- **Período relatado:** 2026-05-09 a 2026-05-13 (Bloco B1 — setup e pipeline mínimo)
+- **Período relatado:** 2026-05-09 a 2026-05-14 (Bloco B1 — setup e pipeline mínimo)
 - **Instituição:** CESUPA, 2º bimestre de 2026
 
 ---
@@ -25,7 +25,7 @@ Durante o Bloco B1, fui responsável pela base do projeto — toda a fundação 
 - **`src/gateway/main.py`** — entrypoint FastAPI com `lifespan` que conecta no RabbitMQ no startup, declara as 3 filas do projeto e armazena a conexão em `app.state.rabbitmq` para as rotas consumirem.
 - **`src/gateway/routes.py`** — `APIRouter` com `/health` (liveness probe), `/ingest` (fire-and-forget publicando no RabbitMQ) e `/query` (RPC sobre AMQP com reply queue exclusiva e timeout de 120s).
 - **`tests/integration/test_gateway_smoke.py`** — smoke do `/health` (skipável via `RUN_INTEGRATION=1`), validando que o app sobe e o lifespan completa sem explodir.
-- **`src/workers/ingest/chunking.py`** — helpers iniciais do recursive splitter: `count_tokens_approx` (aproximação 1 token ≈ 4 chars, com `max(1, ...)` pra evitar zero) e `_split_with_separators` (recursão sobre lista de separadores, anexando o separador de volta pra que a reconstituição via `"".join(parts)` seja lossless). `chunk_text` ainda em andamento.
+- **`src/workers/ingest/chunking.py`** — recursive splitter completo: `count_tokens_approx` (aproximação 1 token ≈ 4 chars, com `max(1, ...)` pra evitar zero), `_split_with_separators` (recursão sobre lista de separadores, anexando o separador de volta pra que a reconstituição via `"".join(parts)` seja lossless) e `chunk_text` (acumulação em buffer + corte hard por caractere para peças maiores que o alvo + prepend de overlap entre chunks adjacentes).
 - **`tests/unit/test_chunking.py`** — testes-spec do splitter (5 casos cobrindo atalho, fronteira de parágrafo, overlap, e limite de tolerância de 25% sobre o alvo).
 - **`TODO.md`** organizando as tarefas dos blocos B1–B5.
 
@@ -150,6 +150,26 @@ Comecei a Task 9 pela base do recursive splitter, antes do `chunk_text` propriam
 
 **Tipagem do retorno vazio.** Mypy strict me obrigou a pensar no caso `text == ""`: a função retorna `list[str]`, então tenho que devolver explicitamente `[]`, não `None`. Pareceu trivial, mas é exatamente o tipo de contrato que o type checker enforce automaticamente e me poupa de quebrar quem consome a função esperando iterável.
 
+### 2.11 Fechando `chunk_text`: prepend, escopo e o teste como spec falível
+
+A última parte da Task 9 foi montar o miolo do `chunk_text`: acumular peças num buffer até estourar o alvo, fechar como chunk, e no fim aplicar overlap entre chunks adjacentes. A primeira versão tinha bugs em quase todas as linhas da fase de overlap; a sessão de revisão virou um desfile de erros pequenos que ensinaram coisas grandes.
+
+**Prepend ≠ append em strings.** Eu escrevi `chunks[i] += text_tail`, achando que estava colando a cauda **antes** do chunk. Mas `x += y` é `x = x + y` — cola **depois**. A IA me forçou a verbalizar a diferença: em prepend, a ordem da concatenação é `cauda + atual`; em append, `atual + cauda`. Mesmo operador, mesma sintaxe, ordem inversa. O efeito visível é que o teste que checava o "começo lógico" do chunk dava certo no append por acidente, mas semanticamente o overlap não estava preservando contexto coisa nenhuma — estava poluindo o final.
+
+**Sobrescrever a variável de iteração com seu próprio valor derivado.** Numa primeira tentativa eu escrevi `overlap_chars = chunks[i-1][-overlap_chars]`, com dois bugs aninhados: (1) reatribui a variável `overlap_chars` (que era um `int` contador) com o resultado da expressão da direita, então na próxima volta do loop o "contador" não existe mais — virou string; (2) `s[-n]` (sem `:`) retorna **um único caractere**, não uma fatia. Pra pegar substring são `s[-n:]` (slice). Aprendi a olhar com mais cuidado pra qualquer linha onde o nome da variável aparece dos **dois lados** de uma atribuição, e a tratar slice vs indexação simples como operações categoricamente diferentes (uma devolve sequência, a outra devolve elemento).
+
+**Mutação de lista durante iteração — risco de cascata.** A versão "quase certa" usava `chunks[i] = text_tail + chunks[i]` — modificava a lista original enquanto o loop ainda lia dela. Nos tamanhos dos testes não dava problema visível, mas a IA apontou que era armadilha latente: na próxima iteração, `chunks[i-1]` é o chunk **já modificado**, e a cauda extraída dele inclui parte da cauda anterior — se um chunk for menor que `overlap_chars`, o overlap começa a "cascatear" conteúdo de chunks distantes. O conserto idiomático foi não tocar em `chunks` durante o loop: construir uma string nova localmente (`text_tail + chunks[i]`) e dar `append` numa lista acumuladora separada (`with_overlap`). Princípio que ficou: **separar leitura de escrita** quando se itera sobre uma estrutura mutável.
+
+**Escopo de variáveis dentro de `if` em Python.** Depois de tudo certo, eu escrevi `return with_overlap` no fim da função, mas `with_overlap` só é criada **dentro** do `if overlap_chars > 0 and len(chunks) > 1`. Se cair no caso falso (overlap zerado ou só um chunk), `with_overlap` nunca foi atribuída e o `return` dispara `UnboundLocalError`. Os 4 testes não pegavam — todos ou caíam no atalho do `if` inicial, ou geravam múltiplos chunks. Mas era bug latente. A correção idiomática foi a "Opção A": atribuir `chunks = with_overlap` **dentro** do `if` (depois do loop), e o `return chunks` fora — assim a variável `with_overlap` vive no escopo onde faz sentido, e o `return` final usa uma variável que sempre existe. Aprendi que Python não tem escopo de bloco como C/Java: variáveis criadas em `if`/`for`/`while` "vazam" pro escopo da função, mas só **se a linha foi executada** — referenciar antes da criação é o que dispara o `UnboundLocalError`.
+
+**O teste como spec — quando o teste é que está errado.** O caso mais conceitualmente interessante: depois que tudo passou no type-check e na revisão lógica, rodei os testes e um falhou — `test_chunk_text_breaks_on_paragraph_boundary`. O teste verificava que `c.lstrip()[0]` de cada chunk continha as letras `a`, `b`, `c`, esperando que cada parágrafo virasse início de um chunk. Mas com prepend de overlap, o chunk 1 começava com a cauda do chunk 0 (que era `"...aaaa\n\n"`), então `lstrip()[0]` continuava sendo `'a'`, não `'b'`. A pergunta ficou desconfortável: **bug na implementação ou no teste?**
+
+A IA me ajudou a articular as duas leituras: (1) implementação tá certa, teste é frouxo demais; (2) teste tá certo, implementação devia "limpar" a cauda nas fronteiras semânticas. A resposta veio de fora do código: a literatura padrão (LangChain, LlamaIndex) e a própria docstring do `chunk_text` definem overlap como "prepend dos últimos N chars do anterior, sem exceção". Limpar a cauda em fronteira de parágrafo seria comportamento custom não documentado. O teste foi escrito com expectativa ingênua de quem ainda não tinha entendido como o overlap funciona na prática.
+
+A correção foi reescrever o teste pra verificar a **intenção real** — que cada bloco `"a" * 1000`, `"b" * 1000`, `"c" * 1000` aparece **íntegro** dentro de algum chunk (substring). Se a função tivesse partido um parágrafo no meio, nenhum chunk teria os 1000 chars contínuos. A métrica mudou de "primeira letra após lstrip" (frágil, dependente do prepend) pra "substring presente em algum chunk" (robusta, mede o que realmente importa: fronteira respeitada).
+
+A lição que ficou: **teste é spec executável, e spec pode ter erro**. Quando teste e implementação discordam, nem sempre o teste é a verdade — às vezes a métrica do teste foi mal escolhida pra capturar a intenção. A pergunta certa não é "como faço o teste passar?", é "qual comportamento eu quero?". Se o comportamento atual é o correto pelo design canônico, o teste é que precisa se ajustar — e o ajuste melhora o teste, porque a nova métrica é menos frágil.
+
 ---
 
 ## 3. Aprendizados de processo e metodologia
@@ -176,7 +196,7 @@ NumPy docstrings, type hints em todas as assinaturas, linha 100, `snake_case`, a
 
 ## 4. O que ainda quero aprender (em aberto pros próximos blocos)
 
-- **B1 finalização**: Tasks 9–14 (chunking recursivo em curso — helpers `count_tokens_approx` e `_split_with_separators` prontos, `chunk_text` em desenvolvimento; parsing PDF, workers fim-a-fim, prompts versionados, smoke test, Makefile ainda pendentes). Task 8 (gateway FastAPI completo) fechada.
+- **B1 finalização**: Tasks 10–14 (parsing PDF, workers fim-a-fim, prompts versionados, smoke test, Makefile ainda pendentes). Task 8 (gateway FastAPI completo) e Task 9 (chunking recursivo — `count_tokens_approx`, `_split_with_separators`, `chunk_text` com overlap, todos os 5 testes passando) fechadas.
 - **B2**: cache distribuído (L1 in-memory, L2 Redis), reranker com cross-encoder bge-reranker-v2-m3, observabilidade Prometheus + Grafana.
 - **B3**: o pulo do gato deste projeto — passar de Modo 1 (Compose num host) pra Modo 2 (3 PCs reais via Tailscale). Aqui vou aprender de verdade sobre rede entre hosts, IaC com Terraform/Ansible, e tolerância a falhas em ambiente distribuído real (não simulado).
 - **B4**: experimentos quantitativos (latência, throughput, tolerância a falhas) e — se o cronograma permitir — comparação Ollama vs vLLM (bônus +10).
