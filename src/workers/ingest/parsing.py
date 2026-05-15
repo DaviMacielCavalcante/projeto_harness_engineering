@@ -42,19 +42,18 @@ def parse_document(
         Se ``source_type`` não for um dos valores suportados.
     """
     
-    # TODO 1: decodificar content_b64 com base64.b64decode → bytes (raw).
     raw: bytes = base64.b64decode(content_b64)
     
     if source_type == "pdf":
         return _parse_pdf(raw=raw)
     
     if source_type == "md":
-        return ([None, raw.decode("utf-8", errors="replace")])
+        return [(None, raw.decode("utf-8", errors="replace"))]
     
     if source_type == "html":
-        return ([None, raw.decode("utf-8", errors="replace")])
+        return [(None, raw.decode("utf-8", errors="replace"))]
 
-    raise ValueError("Formato de origem não suportado!")
+    raise ValueError("source_type nao suportado!")
 
 
 def _parse_pdf(raw: bytes) -> list[tuple[int | None, str]]:
@@ -74,7 +73,7 @@ def _parse_pdf(raw: bytes) -> list[tuple[int | None, str]]:
     
     pdf_reader = PdfReader(io.BytesIO(raw))
     
-    pdf_text = []
+    pdf_text: list[tuple[int | None, str]] = []
     
     for i, page in enumerate(pdf_reader.pages, start=1):
         
