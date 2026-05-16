@@ -21,6 +21,8 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] **Sessão 2026-05-09:** B1 shared modules `config.py`, `schemas.py`, `logging.py` (17 testes verdes, modo code-partner)
 - [x] **Sessão 2026-05-10:** B1 `ollama_client.py` + `messaging.py` + Dockerfiles gateway/worker (21 testes verdes total, mypy strict ok, modo code-partner)
 - [x] **Sessão 2026-05-11/12:** `docker-compose.yml` Modo 1 finalizado + gateway FastAPI mínimo (lifespan + `/health`, smoke de integração), relatório de aprendizagem atualizado
+- [x] **Sessão 2026-05-13/15:** B1 `chunking.py` (recursive splitter, 5 testes verdes) + `parsing.py` (pypdf/md/html), modo code-partner
+- [x] **Sessão 2026-05-16:** B1 `workers/ingest/main.py` — `handle_document` (parse→idioma→chunk→embed→upsert idempotente) + `main` (closure como DI sobre `consume_forever`), modo code-partner; sem teste unitário (validação no smoke da Task 14)
 
 ---
 
@@ -46,9 +48,9 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [ ] `src/gateway/main.py` + `routes.py`: POST /ingest, POST /query, GET /health ⏳ `main.py` (lifespan) + `routes.py` (/health) prontos, `/ingest` e `/query` pendentes
 
 ### Worker de ingestão (Trilha B)
-- [ ] `src/workers/ingest/chunking.py` (recursive, overlap) — TDD
-- [ ] `src/workers/ingest/parsing.py` (PDF/MD/HTML)
-- [ ] `src/workers/ingest/main.py` (parse → chunk → embed → upsert Qdrant)
+- [x] `src/workers/ingest/chunking.py` (recursive, overlap) — TDD ✓ 5 testes verdes
+- [x] `src/workers/ingest/parsing.py` (PDF/MD/HTML) ✓ pypdf por página, md/html como texto bruto
+- [x] `src/workers/ingest/main.py` (parse → chunk → embed → upsert Qdrant) ⏳ revisado + mypy/ruff limpos; validação real só no smoke (Task 14)
 
 ### Worker de query (Trilha B)
 - [ ] `src/workers/query/prompt_builder.py` (templates + truncamento) — TDD

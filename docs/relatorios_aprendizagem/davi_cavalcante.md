@@ -4,7 +4,7 @@
 
 - **Disciplina:** Engenharia de Contexto e Harness Engineering aplicada à Programação Distribuída e Paralela
 - **Tema:** 5 — Sistema RAG distribuído em 3 PCs físicos via Tailscale
-- **Período relatado:** 2026-05-09 a 2026-05-14 (Bloco B1 — setup e pipeline mínimo)
+- **Período relatado:** 2026-05-09 a 2026-05-16 (Bloco B1 — setup e pipeline mínimo)
 - **Instituição:** CESUPA, 2º bimestre de 2026
 
 ---
@@ -170,6 +170,26 @@ A correção foi reescrever o teste pra verificar a **intenção real** — que 
 
 A lição que ficou: **teste é spec executável, e spec pode ter erro**. Quando teste e implementação discordam, nem sempre o teste é a verdade — às vezes a métrica do teste foi mal escolhida pra capturar a intenção. A pergunta certa não é "como faço o teste passar?", é "qual comportamento eu quero?". Se o comportamento atual é o correto pelo design canônico, o teste é que precisa se ajustar — e o ajuste melhora o teste, porque a nova métrica é menos frágil.
 
+### 2.12 Worker de ingestão fim-a-fim: idempotência, closures e a armadilha da coroutine
+
+A Task 11 amarrou tudo do B1 num pipeline só dentro de um handler: `parse_document` (Task 10 — base64 → lista de páginas `(page, texto)`) → detecção de idioma → `chunk_text` → embed no Ollama → upsert no Qdrant. Foi a sessão que mais consolidou conceitos de async e de sistemas distribuídos — e, de novo, onde mais bugs entraram e foram revisados antes de fechar.
+
+**`await` em função síncrona.** Minha primeira versão tinha `await bind_correlation_id(...)` e `await parse_document(...)`. As duas são `def` normais — `await` num retorno `None`/lista quebra em runtime (`object ... can't be used in 'await' expression`). O conceito que ficou: `await` não é "marcador de chamada importante", é operador que só se aplica a awaitables. Colar `await` por reflexo em tudo que parece I/O é antipadrão — a regra é olhar a assinatura: só `async def` recebe `await`.
+
+**Lista de tuplas → string: desempacotamento + join, e a ordem importa.** Pra detectar idioma eu precisava de uma amostra de texto, mas `parse_document` devolve `list[tuple[int|None, str]]`. Tentei `parsed_doc[:500]` — isso fatia a *lista de páginas* (500 páginas), não 500 chars. Aprendi a colapsar com `" ".join(text for _, text in parsed_doc)` (desempacotando a tupla no generator, ignorando o page_num com `_`) e só **depois** fatiar `[:500]`. Junta primeiro, corta no fim — cortar antes de juntar mede a coisa errada.
+
+**`model_config` é atributo reservado do Pydantic.** Bug sutil que custaria tempo: escrevi `ollama.embed(model=settings.model_config)`. `model_config` *existe* em todo `BaseSettings` — é a config interna da classe (env_prefix etc.), não um campo meu. O mypy nem reclama porque o atributo de fato existe; só explodiria no Ollama com um modelo inválido. Lição: prefixo `model_` no Pydantic é zona de colisão com internos; o campo certo era `settings.embedding_model`.
+
+**Id estável = idempotência = tolerância a falhas.** O conceito que mais me marcou. O id de cada ponto no Qdrant vem de `sha256(f"{doc_id}:{chunk_index}")` convertido pra int. Eu via como "gerar um id qualquer", mas a IA me fez conectar: id derivado deterministicamente do conteúdo torna o `upsert` **idempotente** — reenviar o mesmo documento (retry, replay de DLQ no B3, colega reprocessando) sobrescreve os mesmos pontos em vez de duplicar o corpus. Id aleatório quebraria essa garantia silenciosamente. Foi a primeira vez que "content-addressable" deixou de ser jargão e virou propriedade de projeto que consigo justificar no doc técnico. O `% (2**63 - 1)` é só espremer o hash gigante pro range de id que o Qdrant aceita.
+
+**`PointStruct`: id + vector + payload.** Entendi o modelo de dados do Qdrant: cada "ponto" é o id (chave única, sobrescreve no upsert), o vector (os 768 floats que o embed devolve — é por ele que a busca por similaridade roda) e o payload (metadados que voltam no resultado: doc_id, texto do chunk, página, idioma). A busca acontece no vetor; o payload é o que me deixa montar a citação depois.
+
+**Closure como injeção de dependência manual.** O `consume_forever` chama o handler como `handler(msg, payload)`, mas meu `handle_document` é `(payload, ollama, qdrant)` — não recebe `msg` e precisa dos clientes. Minha primeira tentativa foi *chamar* `handle_document(qdrant=..., ollama=...)` e passar o resultado como `handler` — dois erros: (1) `f()` chama agora e passa o retorno; `handler=` quer a *função* pra ser chamada depois (conceito `f` vs `f()`, callback clássico); (2) faltava `payload`, que nem existe no escopo do `main` — ele só nasce quando chega uma mensagem. A solução foi o **closure**: uma `async def handler(msg, payload)` interna que ignora `msg`, captura `ollama`/`qdrant` do escopo do `main` e adia a chamada de `handle_document` até a mensagem chegar. Isso é dependency injection na unha — clientes de vida longa criados uma vez no `main` e "injetados" via captura de escopo, em vez de abrir conexão por mensagem.
+
+**Criar coroutine ≠ executar coroutine (de novo, e pior).** Já tinha apanhado disso nos endpoints do gateway (esquecer `await` no `publish_json`) e reincidi: escrevi `return handle_document(...)` dentro do closure, sem `await`. A cadeia de efeito é traiçoeira: o `consume_forever` faz `async with msg.process()`, o handler retorna a coroutine **sem rodar**, o bloco fecha sem exceção → a mensagem é **ack'd** → o RabbitMQ acha que processou → o documento nunca foi indexado. Ingestão "funciona" sem erro e o Qdrant fica vazio. Python só sussurra um `RuntimeWarning: coroutine was never awaited`. É o pior tipo de bug: silencioso, com perda de dados, e o sinal de erro fácil de ignorar. Internalizei a heurística: chamada `async` sem `await` (e que não vai pra `gather`/`create_task`) é sempre suspeita — o "tipo" daquela expressão é uma promessa não cumprida.
+
+A lição transversal da Task 11: a glue de IO de um sistema distribuído é onde os conceitos de async (await, coroutine, closure, escopo) e os de tolerância a falhas (idempotência, semântica do ack) param de ser teoria e viram a diferença entre "pipeline funciona" e "pipeline finge que funciona".
+
 ---
 
 ## 3. Aprendizados de processo e metodologia
@@ -196,7 +216,7 @@ NumPy docstrings, type hints em todas as assinaturas, linha 100, `snake_case`, a
 
 ## 4. O que ainda quero aprender (em aberto pros próximos blocos)
 
-- **B1 finalização**: Tasks 10–14 (parsing PDF, workers fim-a-fim, prompts versionados, smoke test, Makefile ainda pendentes). Task 8 (gateway FastAPI completo) e Task 9 (chunking recursivo — `count_tokens_approx`, `_split_with_separators`, `chunk_text` com overlap, todos os 5 testes passando) fechadas.
+- **B1 finalização**: Tasks 8 (gateway FastAPI completo), 9 (chunking recursivo, 5 testes), 10 (parsing PDF/MD/HTML) e 11 (worker de ingestão fim-a-fim — `handle_document` + `main`) fechadas. Pendentes: Task 12 (prompts versionados), Task 13 (query worker fim-a-fim) e Task 14 (smoke test + Makefile). O `handle_document`/`main` ainda não foram exercitados de verdade — só revisados e mypy/ruff limpos; a validação real é o smoke da Task 14.
 - **B2**: cache distribuído (L1 in-memory, L2 Redis), reranker com cross-encoder bge-reranker-v2-m3, observabilidade Prometheus + Grafana.
 - **B3**: o pulo do gato deste projeto — passar de Modo 1 (Compose num host) pra Modo 2 (3 PCs reais via Tailscale). Aqui vou aprender de verdade sobre rede entre hosts, IaC com Terraform/Ansible, e tolerância a falhas em ambiente distribuído real (não simulado).
 - **B4**: experimentos quantitativos (latência, throughput, tolerância a falhas) e — se o cronograma permitir — comparação Ollama vs vLLM (bônus +10).
