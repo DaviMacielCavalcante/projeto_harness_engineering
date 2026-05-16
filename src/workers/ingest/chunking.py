@@ -28,10 +28,10 @@ def count_tokens_approx(text: str) -> int:
         Quantidade aproximada de tokens. Mínimo de 1 mesmo para string vazia
         (evita dividir por zero em cálculos a jusante).
     """
-    
     tokens = len(text) // 4
-    
+
     return max(1, tokens)
+
 
 def _split_with_separators(text: str, separators: list[str]) -> list[str]:
     """Divide o texto pelo primeiro separador disponível, recursivamente.
@@ -55,34 +55,33 @@ def _split_with_separators(text: str, separators: list[str]) -> list[str]:
         anexado ao fim — assim a reconstituição via ``"".join(parts)`` é
         lossless.
     """
-    
     if text == "":
         return []
-    
+
     sep = separators[0]
-    
+
     if sep == "":
-        
         text_list = []
-        
+
         text_list.append(text)
-        
+
         return text_list
-    
+
     if sep not in text:
         return _split_with_separators(text=text, separators=separators[1:])
-    
+
     splitted_text = text.split(sep=sep)
-    
+
     remaded_text = []
-    
-    for index,char in enumerate(splitted_text):
+
+    for index, char in enumerate(splitted_text):
         if index == len(splitted_text) - 1:
             remaded_text.append(char)
         else:
             remaded_text.append(char + sep)
-    
+
     return remaded_text
+
 
 def chunk_text(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
     """Divide texto em chunks recursivamente respeitando fronteiras semânticas.
@@ -116,15 +115,14 @@ def chunk_text(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
         Chunks na ordem original. Tolerância: até 25% acima de
         `target_tokens` por chunk para acomodar fronteira semântica.
     """
-    
     target_chars = target_tokens * 4
     overlap_chars = overlap_tokens * 4
-    
+
     if count_tokens_approx(text=text) <= target_tokens:
         return [text]
 
     splitted_text = _split_with_separators(text=text, separators=_SEPARATORS)
-    
+
     chunks: list[str] = []
     buffer = ""
 
@@ -136,7 +134,7 @@ def chunk_text(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
                 chunks.append(buffer)
                 buffer = ""
             for i in range(0, len(piece), target_chars - overlap_chars):
-                chunks.append(piece[i : i+target_chars])
+                chunks.append(piece[i : i + target_chars])
             continue
         if (len(buffer) + len(piece)) <= target_chars:
             buffer += piece
@@ -144,18 +142,18 @@ def chunk_text(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
             if buffer != "":
                 chunks.append(buffer)
                 buffer = piece
-                
-    if buffer != "":               
+
+    if buffer != "":
         chunks.append(buffer)
-    
-    if overlap_chars > 0 and len(chunks) > 1:     
+
+    if overlap_chars > 0 and len(chunks) > 1:
         with_overlap = [chunks[0]]
-        
+
         for i in range(1, len(chunks)):
-            text_tail = chunks[i-1][-overlap_chars:]
+            text_tail = chunks[i - 1][-overlap_chars:]
             overlapped_chunks = text_tail + chunks[i]
             with_overlap.append(overlapped_chunks)
-            
+
         chunks = with_overlap
-            
-    return chunks 
+
+    return chunks

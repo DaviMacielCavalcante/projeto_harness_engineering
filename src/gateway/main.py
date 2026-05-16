@@ -32,19 +32,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     log.info("gateway.starting", rabbitmq=settings.rabbitmq_url)
 
-    
     async with connect(settings.rabbitmq_url) as conn:
         await declare_queues(
             conn,
             settings.queue_ingest_documents,
             settings.queue_ingest_chunks,
-            settings.queue_query_requests
+            settings.queue_query_requests,
         )
         app.state.rabbitmq = conn
         log.info("gateway.ready", rabbitmq=settings.rabbitmq_url)
         yield
-        
+
     log.info("gateway.stopping", rabbitmq=settings.rabbitmq_url)
+
 
 app = FastAPI(title="RAG Distribuído — Gateway", lifespan=lifespan)
 app.include_router(router)

@@ -41,15 +41,14 @@ def parse_document(
     ValueError
         Se ``source_type`` não for um dos valores suportados.
     """
-    
     raw: bytes = base64.b64decode(content_b64)
-    
+
     if source_type == "pdf":
         return _parse_pdf(raw=raw)
-    
+
     if source_type == "md":
         return [(None, raw.decode("utf-8", errors="replace"))]
-    
+
     if source_type == "html":
         return [(None, raw.decode("utf-8", errors="replace"))]
 
@@ -70,15 +69,13 @@ def _parse_pdf(raw: bytes) -> list[tuple[int | None, str]]:
         Uma tupla por página com texto não-vazio. ``page_number`` começa em 1.
         Páginas em branco (texto vazio após `extract_text`) são descartadas.
     """
-    
     pdf_reader = PdfReader(io.BytesIO(raw))
-    
+
     pdf_text: list[tuple[int | None, str]] = []
-    
+
     for i, page in enumerate(pdf_reader.pages, start=1):
-        
         page_text = page.extract_text()
         if page_text.strip() != "":
             pdf_text.append((i, page_text))
-        
+
     return pdf_text
