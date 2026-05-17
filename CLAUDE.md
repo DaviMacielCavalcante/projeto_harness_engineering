@@ -114,6 +114,17 @@ O projeto **não é** TDD purista para tudo. A regra prática:
 
 Os planos de bloco (B1–B5) explicitam onde cada coisa cai.
 
+## Pareamento (code-partner): granularidade dos TODOs
+
+Boa parte das sessões roda no modo parceiro (skill `code-partner`, descrito em `docs/USO_DE_IA.md` §2.5): a IA entrega estrutura + a suíte de testes (o contrato executável); o integrante escreve o miolo das funções de produção.
+
+A granularidade do scaffolding (TODOs comentados) **se adapta à experiência declarada pelo integrante**:
+
+- **Se o integrante disser que não tem experiência** com aquela parte (ex: "não tenho experiência com isso", "é terreno novo pra mim"): os TODOs vêm no formato **detalhado e beginner-first** — cada passo diz *o que* fazer, *por quê*, *qual ferramenta/API* usar (`.read_text`, `.find`, `Template.render`, etc.) e marca explicitamente as **armadilhas** (ex: `str.find` devolvendo `-1`, mutação acidental de objeto compartilhado). Modelo de referência: os TODOs expandidos em `src/workers/query/prompt_builder.py`.
+- **Caso contrário** (terreno familiar): TODOs concisos, um a duas linhas por passo, sem explicar APIs básicas.
+
+Independente da granularidade, a fronteira do `code-partner` não muda: pseudocódigo/sinalização de API em comentário é permitido; escrever as expressões Python que *resolvem* o problema (o miolo) não é. Detalhar mais ≠ entregar a solução.
+
 ## Engenharia de contexto
 
 - Prompts versionados em `prompts/` com frontmatter YAML (`version`, `model_target`, `last_changed`, `notes`). Não é código — é configuração que muda independente do código.
@@ -147,6 +158,7 @@ Os planos de bloco (B1–B5) explicitam onde cada coisa cai.
 - Não commite `.venv/`, caches, `data/*.csv`, `.env*` (exceto `.env.example`), volumes Docker, `terraform.tfstate*` — todos no `.gitignore`.
 - Não escreva em estado de módulo no import time. Prefira funções puras, ou classes que possuam o próprio estado.
 - Não execute commits no projeto — o usuário (Davi) commita manualmente. Veja `~/.claude/projects/.../memory/feedback_no_commits.md`.
+- Não execute comandos de teste, lint ou type-check (`uv run pytest`, `uv run ruff check/format`, `uv run mypy`) — quem roda é o desenvolvedor (Davi). Você **sugere o comando exato**; execução, leitura da saída e correção são dele. Inclui rodar "só pra confirmar". Mesma lógica do "não commitar". Veja `~/.claude/projects/.../memory/feedback_no_command_execution.md`.
 - Não use AWS — o projeto é deliberadamente local. Mapeamentos: SQS→RabbitMQ, S3→volumes, DynamoDB→Redis/Qdrant, CloudWatch→Prometheus+Grafana+Loki.
 - Em code review, **não aponte ajustes cosméticos** (whitespace sobrando, vírgula final faltando, ordem de imports, linha em branco extra, etc.) — o ruff cobre tudo isso quando Davi rodar `uv run ruff check --fix .` / `uv run ruff format .`. Foque em bugs reais, problemas de design, conexões com conceitos, e violações de convenção que o ruff/mypy não pegam.
 

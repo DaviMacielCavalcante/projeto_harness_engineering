@@ -4,7 +4,7 @@
 
 - **Disciplina:** Engenharia de Contexto e Harness Engineering aplicada à Programação Distribuída e Paralela
 - **Tema:** 5 — Sistema RAG distribuído em 3 PCs físicos via Tailscale
-- **Período relatado:** 2026-05-09 a 2026-05-16 (Bloco B1 — setup e pipeline mínimo)
+- **Período relatado:** 2026-05-09 a 2026-05-17 (Bloco B1 — setup e pipeline mínimo)
 - **Instituição:** CESUPA, 2º bimestre de 2026
 
 ---
@@ -27,6 +27,7 @@ Durante o Bloco B1, fui responsável pela base do projeto — toda a fundação 
 - **`tests/integration/test_gateway_smoke.py`** — smoke do `/health` (skipável via `RUN_INTEGRATION=1`), validando que o app sobe e o lifespan completa sem explodir.
 - **`src/workers/ingest/chunking.py`** — recursive splitter completo: `count_tokens_approx` (aproximação 1 token ≈ 4 chars, com `max(1, ...)` pra evitar zero), `_split_with_separators` (recursão sobre lista de separadores, anexando o separador de volta pra que a reconstituição via `"".join(parts)` seja lossless) e `chunk_text` (acumulação em buffer + corte hard por caractere para peças maiores que o alvo + prepend de overlap entre chunks adjacentes).
 - **`tests/unit/test_chunking.py`** — testes-spec do splitter (5 casos cobrindo atalho, fronteira de parágrafo, overlap, e limite de tolerância de 25% sobre o alvo).
+- **`src/workers/query/prompt_builder.py`** — escrevi o miolo de `_load` (lê o prompt versionado e remove o frontmatter YAML) e `build_prompt` (seleciona o system prompt por idioma, renderiza o template Jinja do usuário e trunca os blocos de contexto pela cauda dentro de um orçamento de caracteres). Atribuição honesta: nesta sessão, pelo modelo da §2.5 do `USO_DE_IA.md`, os testes (`tests/unit/test_prompt_builder.py`) e os 3 arquivos de prompt vieram da IA como contrato executável/configuração; o **código de produção foi meu**.
 - **`TODO.md`** organizando as tarefas dos blocos B1–B5.
 
 Além disso, contribuí com revisões iterativas: endurecer `mypy strict` em todo `shared/` (eliminar `no-any-return`), ajustar o compose após discussão sobre a sintaxe mais enxuta de `networks:`, e pinar versões das imagens Docker em vez de usar `latest`.
@@ -190,6 +191,28 @@ A Task 11 amarrou tudo do B1 num pipeline só dentro de um handler: `parse_docum
 
 A lição transversal da Task 11: a glue de IO de um sistema distribuído é onde os conceitos de async (await, coroutine, closure, escopo) e os de tolerância a falhas (idempotência, semântica do ack) param de ser teoria e viram a diferença entre "pipeline funciona" e "pipeline finge que funciona".
 
+### 2.13 `prompt_builder`: engenharia de contexto na prática e a semântica fina das strings
+
+A Task 13 começou pelo `prompt_builder` — o módulo que monta o prompt final enviado ao modelo de geração. Foi a primeira vez que "engenharia de contexto", o nome da disciplina, deixou de ser título e virou código que eu escrevi.
+
+**Por que esse módulo existe (o "A" de RAG).** O Qwen nunca viu o nosso corpus — ele foi treinado em dado genérico, não nos PDFs que o worker de ingestão indexou. Se eu perguntar direto, ele alucina. RAG resolve recuperando os chunks relevantes e **colando no prompt**: o `prompt_builder` é a etapa de *Augmentation*, a ponte entre o retrieval (Qdrant) e a geração (Ollama). O que ficou concreto: **o prompt é o único canal** — tudo que o modelo sabe sobre aquela query é o que está ali. Por isso são dois arquivos com papéis distintos: o *system* (`system_qa_pt.md`) é a **política** (responder só pelo contexto, dizer "não encontrei" se não cobrir — o freio anti-alucinação —, formato de citação `[source: ...]`); o *user template* (`user_qa_template.md`) é o **payload** Jinja dinâmico com os chunks etiquetados e a pergunta. A etiqueta de fonte em cada bloco não é decoração: é o que **viabiliza a citação**, requisito do marco luz-verde do B1.
+
+**Orçamento de chars como proxy de tokens.** O Qwen tem janela finita (`num_ctx=8192`). Se o prompt estoura, o runtime corta silenciosamente — e geralmente corta o fim, que pode ser a própria pergunta. Por isso `build_prompt` corta de propósito, e corta a **cauda** (o retrieval entrega rankeado por similaridade, então a cauda é o menos relevante). Aprendi que o `max_chars` é um *proxy* grosseiro de tokens (~4 chars/token), aceitável no B1, refinável com tokenizer real se um experimento do B4 mostrar que precisa. A decisão de *quem* sacrificar é minha, explícita — não do runtime, às cegas.
+
+**`str.lstrip(chars)` opera sobre um conjunto de caracteres, não sobre um prefixo.** O erro mais instrutivo: troquei `.lstrip("\n")` (certo) por `.lstrip("---")` achando que removia a string `"---"`. Não: o argumento vira o **conjunto** `{'-'}`, e `.lstrip("---")` é idêntico a `.lstrip("-")`. Pra remover prefixo existe `str.removeprefix`. Pior que o lint: se um prompt um dia começasse com um bullet markdown (`- item`), `.lstrip("-")` comeria o conteúdo. Errado-pro-objetivo **e** destrutivo.
+
+**`str.find` devolve `-1` quando não acha.** Se eu fatiar usando esse `-1` sem checar (`raw[(-1)+3:]` vira `raw[2:]`), decapito os 2 primeiros chars do arquivo silenciosamente. Tratar o `-1` explicitamente não é paranoia — é a diferença entre "sem frontmatter, devolve tudo" e "devolve lixo".
+
+**Diretório não é arquivo; e o parâmetro que evaporou.** Escrevi `_PROMPTS_DIR.read_text()` — mas `_PROMPTS_DIR` é a **pasta**, e `.read_text()` numa pasta levanta `IsADirectoryError`. Pior: o parâmetro `name` (qual prompt carregar) tinha sumido da linha. O certo era `(_PROMPTS_DIR / name).read_text(...)`. Lição: quando uma função recebe um parâmetro e ele não aparece no corpo, é red flag.
+
+**Ordem dos campos numa dataclass: posicional e nomeado colidem.** `ContextBlock(block.text[:n], source=..., page=...)` — o 1º argumento é **posicional**, então casa com o **primeiro campo declarado** (`source`), e aí `source=...` repete → `TypeError: got multiple values for argument 'source'`. Eu queria que o posicional fosse `text` (3º campo). Aprendi a passar tudo nomeado quando a ordem não é óbvia, e que a assinatura de uma dataclass é a ordem de declaração dos campos, não a ordem em que eu penso neles.
+
+**Confundir os dois prompts quebrou o módulo inteiro.** O bug-raiz: carreguei o arquivo *system* dentro de um `Template` que chamei de `user_template`, **nunca** carreguei o `user_qa_template.md`, e perdi o `system` como string. Consequência em cascata: o `.render(question=..., context_blocks=...)` rodava sobre um texto sem placeholders Jinja, ignorando pergunta e blocos; e o `system` nem entrava no retorno. Foi o que mais consolidou a distinção **política vs payload** — não são dois nomes pra mesma coisa, são dois arquivos com responsabilidades diferentes, e fundi-los esvazia o RAG.
+
+**Verde não é prova de correção (de novo, mais sutil).** Numa versão intermediária o `---` de fechamento vazava pro prompt. Os testes checam `marcador in prompt` e comprimento — o marcador aparece *depois* do lixo, então passariam mesmo com o bug. E o `_load` só é exercitado quando `build_prompt` o chama: enquanto `build_prompt` era `raise NotImplementedError`, **nenhum teste tocava o `_load`** — correção dele ficou latente até a integração. Reforçou o que eu já tinha visto no chunking: teste é amostra, não prova; ausência de contraexemplo não é corretude.
+
+A lição transversal da Task 13: quase todos os bugs foram **semântica fina de primitivas** (string como conjunto vs prefixo, `-1` do `find`, Path vs file, binding de argumento de dataclass) e **confusão conceitual de papéis** (system vs user) — não erro de algoritmo. O loop de truncamento, que era a única lógica "de verdade", saiu certo de primeira. Engenharia de contexto é, ao mesmo tempo, decisão de produto (o que entra no prompt e por quê) e precisão cirúrgica nas primitivas que montam esse texto.
+
 ---
 
 ## 3. Aprendizados de processo e metodologia
@@ -212,11 +235,19 @@ A skill `code-partner` foi adotada em parte das sessões justamente pra eu não 
 
 NumPy docstrings, type hints em todas as assinaturas, linha 100, `snake_case`, async-first sem mistura com I/O síncrono — escrever isso no `CLAUDE.md` desde o início significa que cada arquivo novo nasce no padrão. Aprendi que **convenção documentada vale mais que disciplina individual**: ninguém precisa lembrar das regras se elas estão escritas e o linter as enforce.
 
+### 3.5 A declaração de uso de IA como artefato defensável; e a fronteira de quem executa
+
+A sessão de 17/05 cristalizou dois aprendizados de processo que não são sobre código.
+
+**A declaração de uso de IA não é formalidade — é peça de defesa.** Em certo momento pedi pra IA reescrever o `USO_DE_IA.md` afirmando que uma divisão de trabalho "sempre foi assim", apagando o changelog datado. A IA segurou: o texto anterior do próprio documento, o histórico do repo e o que tinha acontecido na própria sessão contradiziam o "sempre". Minha primeira reação foi me sentir acusado de mentir. O que aprendi, depois que a IA separou as coisas, é a diferença entre **"estou sendo chamado de mentiroso"** e **"este documento precisa sobreviver a um cruzamento de evidências numa arguição"**. Esquecer de atualizar um doc de processo num sprint de 16 dias é normal e humano; retroajustar a declaração de honestidade pra esconder isso é exatamente o erro que o documento existe pra evitar. A saída honesta foi enquadrar o **princípio estável** (a IA dá estrutura e contrato executável; eu escrevo a solução) sem backdatar, com uma linha datada só pro que de fato mudou naquele dia. Ficou a regra: o documento cuja função é honestidade é o último lugar pra arredondar canto — e `CLAUDE.md` e `USO_DE_IA.md` precisam ser mantidos coerentes deliberadamente, não por acaso.
+
+**Quem roda os comandos sou eu.** Estabeleci como convenção (em `CLAUDE.md` + memória de feedback, análogo ao "não commitar") que a IA **sugere** os comandos de teste/lint/type-check mas **não os executa** — nem "só pra confirmar". O porquê: o ciclo rodar → ler o erro → corrigir é onde mora o aprendizado e a posse do código; terceirizar isso pra IA esvazia o exercício. No mesmo espírito, combinei que a granularidade dos `TODO`s de scaffolding se adapta à experiência que eu **declaro** ter naquela parte — pedir o nível certo de ajuda (esqueleto detalhado em terreno novo, conciso no familiar) é, ele mesmo, uma habilidade. A lição reforça a 3.3: trabalhar com IA como parceiro exige eu definir e policiar as fronteiras, não só consumir o que ela entrega.
+
 ---
 
 ## 4. O que ainda quero aprender (em aberto pros próximos blocos)
 
-- **B1 finalização**: Tasks 8 (gateway FastAPI completo), 9 (chunking recursivo, 5 testes), 10 (parsing PDF/MD/HTML) e 11 (worker de ingestão fim-a-fim — `handle_document` + `main`) fechadas. Pendentes: Task 12 (prompts versionados), Task 13 (query worker fim-a-fim) e Task 14 (smoke test + Makefile). O `handle_document`/`main` ainda não foram exercitados de verdade — só revisados e mypy/ruff limpos; a validação real é o smoke da Task 14.
+- **B1 finalização**: Tasks 8 (gateway FastAPI completo), 9 (chunking recursivo, 5 testes), 10 (parsing PDF/MD/HTML), 11 (worker de ingestão fim-a-fim — `handle_document` + `main`) e 12 (prompts versionados) fechadas. Task 13 parcial: `prompt_builder.py` fechado (TDD, 7 testes verdes, mypy strict), falta `workers/query/main.py` (consumer loop do query-worker). Pendente também a Task 14 (smoke test + Makefile). O `handle_document`/`main` do ingest e o futuro `main` do query ainda não foram exercitados de verdade — só revisados e mypy/ruff limpos; a validação real é o smoke da Task 14.
 - **B2**: cache distribuído (L1 in-memory, L2 Redis), reranker com cross-encoder bge-reranker-v2-m3, observabilidade Prometheus + Grafana.
 - **B3**: o pulo do gato deste projeto — passar de Modo 1 (Compose num host) pra Modo 2 (3 PCs reais via Tailscale). Aqui vou aprender de verdade sobre rede entre hosts, IaC com Terraform/Ansible, e tolerância a falhas em ambiente distribuído real (não simulado).
 - **B4**: experimentos quantitativos (latência, throughput, tolerância a falhas) e — se o cronograma permitir — comparação Ollama vs vLLM (bônus +10).

@@ -51,9 +51,11 @@ A IA foi utilizada como **co-piloto técnico** nas seguintes etapas, sob direç�
 - Esqueleto dos slides da apresentação (8.3).
 
 ### 2.5 Pareamento guiado para aprendizado (a partir de 2026-05-10)
-- Em parte das sessões de implementação, a IA atua em **modo parceiro de código** (skill local `code-partner`): escreve apenas estrutura (imports, assinaturas tipadas, docstrings, esqueletos de teste, `TODO`s comentados) e conduz o desenvolvimento via **perguntas socráticas**.
-- O integrante escreve **o miolo de cada função** — a lógica de negócio, os retornos, os casts de tipo, as correções de bug — recebendo *code review* imediato da IA após cada iteração.
-- Esse modo é deliberadamente mais lento que a geração direta de código (2.3), em troca de garantir que cada integrante compreenda o que está escrevendo. Adotado quando a tarefa tem valor pedagógico claro (cliente HTTP com retry, schemas Pydantic, chunking, etc.).
+- Em parte das sessões de implementação, a IA atua em **modo parceiro de código** (skill local `code-partner`): fornece a **estrutura de partida** (imports, assinaturas tipadas, docstrings, `TODO`s comentados) e o **contrato executável** da tarefa (a suíte de testes que define o comportamento esperado), conduzindo o desenvolvimento via **perguntas socráticas**.
+- O integrante escreve **o miolo de cada função de produção** — a lógica de negócio, os retornos, os casts de tipo, as correções de bug — até fazer a suíte de testes passar, recebendo *code review* imediato da IA após cada iteração. O princípio é estável desde a adoção do modo: **a IA dá estrutura e contrato; o integrante escreve a solução.**
+- A *forma* do contrato executável foi padronizada em **2026-05-17**: a IA entrega a suíte de testes completa como especificação executável, em vez de esqueletos de teste a serem completados pelo integrante.
+- A granularidade do scaffolding (os `TODO`s comentados na estrutura) adapta-se à experiência que o integrante **declara** ter naquela parte do projeto (convenção adotada em **2026-05-17**, registrada em `CLAUDE.md`, seção "Pareamento (code-partner): granularidade dos TODOs"): quando o integrante informa não ter experiência, os `TODO`s vêm detalhados — cada passo explica o que fazer, por quê, qual API usar e quais armadilhas evitar; em terreno familiar, vêm concisos. Em nenhum dos casos a IA escreve as expressões que resolvem o problema: detalhar mais não é entregar a solução.
+- Esse modo é deliberadamente mais lento que a geração direta de código (2.3), em troca de garantir que cada integrante compreenda o que está escrevendo. Adotado quando a tarefa tem valor pedagógico claro (cliente HTTP com retry, schemas Pydantic, chunking, prompt builder, etc.).
 
 ## 3. O que os integrantes da equipe fazem
 
@@ -108,4 +110,4 @@ Os modelos de linguagem hospedados (`qwen2.5:7b-instruct`, `nomic-embed-text`, `
 
 ---
 
-**Última atualização:** 2026-05-10. Este documento será atualizado se o padrão de uso da IA mudar significativamente ao longo do desenvolvimento.
+**Última atualização:** 2026-05-17. Este documento será atualizado se o padrão de uso da IA mudar significativamente ao longo do desenvolvimento.

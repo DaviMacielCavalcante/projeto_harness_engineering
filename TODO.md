@@ -23,6 +23,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] **Sessão 2026-05-11/12:** `docker-compose.yml` Modo 1 finalizado + gateway FastAPI mínimo (lifespan + `/health`, smoke de integração), relatório de aprendizagem atualizado
 - [x] **Sessão 2026-05-13/15:** B1 `chunking.py` (recursive splitter, 5 testes verdes) + `parsing.py` (pypdf/md/html), modo code-partner
 - [x] **Sessão 2026-05-16:** B1 `workers/ingest/main.py` — `handle_document` (parse→idioma→chunk→embed→upsert idempotente) + `main` (closure como DI sobre `consume_forever`), modo code-partner; sem teste unitário (validação no smoke da Task 14)
+- [x] **Sessão 2026-05-17:** B1 `workers/query/prompt_builder.py` — `_load` + `build_prompt` (orçamento de chars, truncamento de cauda), TDD ✓ 7 testes verdes, mypy strict ok; criados os 3 prompts versionados (`system_qa_pt/en`, `user_qa_template`); `USO_DE_IA.md` §2.5 + `CLAUDE.md` atualizados (granularidade de TODO por experiência declarada; Claude não executa pytest/ruff/mypy nem commita), modo code-partner
 
 ---
 
@@ -53,7 +54,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] `src/workers/ingest/main.py` (parse → chunk → embed → upsert Qdrant) ⏳ revisado + mypy/ruff limpos; validação real só no smoke (Task 14)
 
 ### Worker de query (Trilha B)
-- [ ] `src/workers/query/prompt_builder.py` (templates + truncamento) — TDD
+- [x] `src/workers/query/prompt_builder.py` (templates + truncamento) — TDD ✓ 7 testes verdes, mypy strict ok
 - [ ] `src/workers/query/main.py` (embed query → retrieval → generate → reply)
 
 ### Infra Docker (Trilha A)
@@ -61,7 +62,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] `docker-compose.yml` com profile `all` (Modo 1)
 
 ### Prompts mínimos (Trilha A)
-- [ ] `prompts/system_qa_pt.md`, `prompts/system_qa_en.md`, `prompts/user_qa_template.md`
+- [x] `prompts/system_qa_pt.md`, `prompts/system_qa_en.md`, `prompts/user_qa_template.md` ✓ frontmatter YAML versionado (v0.1.0-b1)
 
 ### Validação (Trilha C)
 - [ ] `scripts/smoke_test.py` + `Makefile`
