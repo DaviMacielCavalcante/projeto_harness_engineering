@@ -83,8 +83,6 @@ async def handle_document(
     Envolver o corpo em ``bind_correlation_id`` / ``clear_correlation_id``
     (try/finally) para que toda linha de log carregue o ``correlation_id``.
     """
-    # TODO 1: validar payload -> DocumentMessage; bind_correlation_id(doc.correlation_id)
-
     try:
         doc = DocumentMessage.model_validate(payload)
 
