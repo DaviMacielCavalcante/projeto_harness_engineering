@@ -203,11 +203,13 @@ data/**/*.txt
 data/**/log.txt
 !data/.gitkeep
 
-# Corpus de teste: smoke usa samples/exemplo.pdf; corpus completo (~80 PDFs) fica fora
+# Corpus de teste: NENHUM PDF é versionado (são documentos de terceiros).
+# Cada pessoa coloca um PDF curto em samples/ — default: samples/exemplo.pdf.
+# Ver samples/README.md. Corpus completo (~80 PDFs do B3) também fica fora.
 samples/corpus/
 samples/*.pdf
-!samples/exemplo.pdf
 !samples/.gitkeep
+!samples/README.md
 
 # Terraform state local
 infra/terraform/.terraform/
