@@ -83,42 +83,37 @@ def _split_with_separators(text: str, separators: list[str]) -> list[str]:
     return remaded_text
 
 
-def chunk_text(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
-    """Divide texto em chunks recursivamente respeitando fronteiras semânticas.
-
-    Estratégia em três fases:
-
-    1. Atalho — se o texto inteiro já cabe em `target_tokens`, devolve
-       ``[text]`` sem dividir.
-    2. Acumulação — `_split_with_separators` quebra o texto em peças;
-       acumula-se peças num buffer até que adicionar a próxima estoure
-       `target_chars`. Quando estoura, fecha o buffer como chunk e começa
-       um novo.
-    3. Overlap — após formar os chunks, prepend dos últimos `overlap_chars`
-       do chunk anterior no começo do próximo (exceto o primeiro).
-
-    Caso especial: se uma única peça já é maior que `target_chars`, força
-    corte hard por caractere com passos de ``target_chars - overlap_chars``.
+def chunk_text(text: str, target_tokens: int, overlap_tokens: int, max_tokens: int) -> list[str]:
+    """Divide texto em chunks com teto duro garantido pós-overlap.
 
     Parameters
     ----------
     text : str
         Texto a dividir.
     target_tokens : int
-        Tamanho alvo de cada chunk em tokens (aprox. 4 chars/token).
+        Tamanho-alvo de cada chunk (mira, não garantia).
     overlap_tokens : int
-        Quantidade de tokens repetidos entre chunks adjacentes.
+        Tokens repetidos entre chunks adjacentes.
+    max_tokens : int
+        Teto duro do modelo de embedding (ex.: 2048 p/ nomic-v1.5).
 
     Returns
     -------
     list of str
-        Chunks na ordem original. Tolerância: até 25% acima de
-        `target_tokens` por chunk para acomodar fronteira semântica.
+        Chunks na ordem original. **Invariante**: para todo chunk ``c``
+        devolvido (já com overlap aplicado),
+        ``count_tokens_approx(c) <= max_tokens // 2 - overlap_tokens``.
+        O ``// 2`` é fator de segurança da aproximação chars/4 para
+        PT + extração de PDF + WordPiece. Garantia, não mira.
     """
-    target_chars = target_tokens * 4
     overlap_chars = overlap_tokens * 4
 
-    if count_tokens_approx(text=text) <= target_tokens:
+    content_budget = (max_tokens // 2 - overlap_tokens) - overlap_tokens
+    effective_target = min(target_tokens, content_budget)
+
+    budget_chars = effective_target * 4
+
+    if count_tokens_approx(text=text) <= effective_target:
         return [text]
 
     splitted_text = _split_with_separators(text=text, separators=_SEPARATORS)
@@ -129,14 +124,14 @@ def chunk_text(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
     for piece in splitted_text:
         if piece == "":
             continue
-        if len(piece) > target_chars:
+        if len(piece) > budget_chars:
             if buffer != "":
                 chunks.append(buffer)
                 buffer = ""
-            for i in range(0, len(piece), target_chars - overlap_chars):
-                chunks.append(piece[i : i + target_chars])
+            for i in range(0, len(piece), budget_chars):
+                chunks.append(piece[i : i + budget_chars])
             continue
-        if (len(buffer) + len(piece)) <= target_chars:
+        if (len(buffer) + len(piece)) <= budget_chars:
             buffer += piece
         else:
             if buffer != "":

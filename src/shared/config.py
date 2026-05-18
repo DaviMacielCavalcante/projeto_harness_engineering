@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     ollama_url: str = "http://ollama:11434"
     embedding_model: str = "nomic-embed-text"
     generation_model: str = "qwen2.5:7b-instruct"
+    embedding_max_tokens: int = 2048
     generation_num_ctx: int = 8192
     generation_temperature: float = 0.2
 
