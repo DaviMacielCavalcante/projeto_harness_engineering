@@ -14,6 +14,7 @@ import hashlib
 import socket
 from typing import Any
 
+import httpx
 from aio_pika.abc import AbstractIncomingMessage
 from langdetect import LangDetectException, detect
 from qdrant_client import AsyncQdrantClient
@@ -103,6 +104,7 @@ async def handle_document(
 
         points: list[qmodels.PointStruct] = []
         chunk_index = 0
+        indexed_total = 0
 
         for page, text in parsed_doc:
             if not text.strip():
@@ -111,40 +113,52 @@ async def handle_document(
                 text=text,
                 target_tokens=settings.chunk_target_tokens,
                 overlap_tokens=settings.chunk_overlap_tokens,
+                max_tokens=settings.embedding_max_tokens,
             )
 
             for chunk in chunks:
                 if not chunk.strip():
                     continue
-                vector = await ollama.embed(model=settings.embedding_model, text=chunk)
+                try:
+                    vector = await ollama.embed(model=settings.embedding_model, text=chunk)
 
-                vector_id = f"{doc.doc_id}:{chunk_index}"
+                    vector_id = f"{doc.doc_id}:{chunk_index}"
 
-                qdrant_id = hashlib.sha256(vector_id.encode()).hexdigest()
+                    qdrant_id = hashlib.sha256(vector_id.encode()).hexdigest()
 
-                id_int = int(qdrant_id, 16) % (2**63 - 1)
+                    id_int = int(qdrant_id, 16) % (2**63 - 1)
 
-                point = qmodels.PointStruct(
-                    id=id_int,
-                    vector=vector,
-                    payload={
-                        "doc_id": doc.doc_id,
-                        "chunk_id": vector_id,
-                        "text": chunk,
-                        "source": doc.filename,
-                        "page": page,
-                        "lang": lang,
-                        "chunk_index": chunk_index,
-                    },
-                )
-
+                    point = qmodels.PointStruct(
+                        id=id_int,
+                        vector=vector,
+                        payload={
+                            "doc_id": doc.doc_id,
+                            "chunk_id": vector_id,
+                            "text": chunk,
+                            "source": doc.filename,
+                            "page": page,
+                            "lang": lang,
+                            "chunk_index": chunk_index,
+                        },
+                    )
+                except httpx.HTTPStatusError as e:
+                    log.warning(
+                        "ingest.chunk.skipped",
+                        doc_id=doc.doc_id,
+                        chunk_index=chunk_index,
+                        page=page,
+                        status=e.response.status_code,
+                    )
+                    continue
                 points.append(point)
                 chunk_index += 1
+                indexed_total += 1
 
-        if points:
-            await qdrant.upsert(collection_name=settings.qdrant_collection, points=points)
+            if points:
+                await qdrant.upsert(collection_name=settings.qdrant_collection, points=points)
+                points = []
 
-        log.info("ingest.document.indexed", doc_id=doc.doc_id, chunks=len(points), host=HOSTNAME)
+        log.info("ingest.document.indexed", doc_id=doc.doc_id, chunks=indexed_total, host=HOSTNAME)
 
     finally:
         clear_correlation_id()

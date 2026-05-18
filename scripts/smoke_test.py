@@ -30,7 +30,7 @@ GATEWAY = "http://localhost:8000"
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", default="samples/exemplo.pdf")
+    parser.add_argument("--file", default="samples/ap_es_v1.pdf")
     parser.add_argument("--question", default="Sobre o que fala este documento?")
     parser.add_argument("--wait", type=float, default=30.0, help="segundos para indexação")
     args = parser.parse_args()
