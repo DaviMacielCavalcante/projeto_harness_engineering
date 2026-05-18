@@ -24,6 +24,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] **Sessão 2026-05-13/15:** B1 `chunking.py` (recursive splitter, 5 testes verdes) + `parsing.py` (pypdf/md/html), modo code-partner
 - [x] **Sessão 2026-05-16:** B1 `workers/ingest/main.py` — `handle_document` (parse→idioma→chunk→embed→upsert idempotente) + `main` (closure como DI sobre `consume_forever`), modo code-partner; sem teste unitário (validação no smoke da Task 14)
 - [x] **Sessão 2026-05-17:** B1 `workers/query/prompt_builder.py` — `_load` + `build_prompt` (orçamento de chars, truncamento de cauda), TDD ✓ 7 testes verdes, mypy strict ok; criados os 3 prompts versionados (`system_qa_pt/en`, `user_qa_template`); `USO_DE_IA.md` §2.5 + `CLAUDE.md` atualizados (granularidade de TODO por experiência declarada; Claude não executa pytest/ruff/mypy nem commita), modo code-partner. **+ `workers/query/main.py`** — `handle_query` (validar → embed → retrieval Qdrant → build_prompt → generate → publica `QueryResponse` no `reply_to`, RPC sobre AMQP; caminho sem-hits curto-circuita o LLM) + `main` (closure como DI), mypy strict + ruff ok, sem unit (validação no smoke da Task 14). **Task 13 fechada.** **+ Task 14:** `Makefile` completo + `scripts/smoke_test.py` (health → ingest → wait → query → veredito, exit code), ruff/mypy strict verdes; `samples/eap_es_v1.pdf` adicionado. Código do B1 completo — falta só a aceitação (Task 15, contra stack real).
+- [x] **Sessão 2026-05-18:** GPU PC1 habilitada (driver + NVIDIA Container Toolkit, Mint 22.3; runbook `docs/setup-gpu-pc1.md`). **Task 15 destravada:** smoke falhava em `Ollama 500 "input exceeds context length"` — chunks > teto do nomic (2048) porque `count_tokens_approx` (chars/4) subestima PT+PDF+WordPiece. Correções, modo code-partner: (a) `chunking.py` ganhou `max_tokens` + dimensionamento `min(target,budget)` convertido a char-space, **8 testes verdes** (3 patológicos); (b) `workers/ingest/main.py` — fronteira de erro por chunk (`except httpx.HTTPStatusError` → skip + `log.warning ingest.chunk.skipped`), upsert incremental por página, contador `indexed_total`. **`make smoke` passa**: resposta fundamentada, 3 citações, 122 chunks indexados; `pytest` 44 verdes. Cancelado o "TODO-2" (varredura no chunker — redundante+cega; backstop real é a fronteira do worker). Pendente: captura `data/b1-smoke.txt` + `ruff`/`mypy` formais.
 
 ---
 
@@ -35,7 +36,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 ### Pré-condições (paralelo, dia 1)
 - [ ] **[C]** Tailscale instalado e autenticado nos 3 PCs
 - [ ] **[C]** Docker e Docker Compose instalados nos 3 PCs
-- [ ] **[A]** GPU NVIDIA + nvidia-container-toolkit no PC1
+- [x] **[A]** GPU NVIDIA + nvidia-container-toolkit no PC1 ✓ driver + toolkit no PC1 (Mint 22.3); runbook `docs/setup-gpu-pc1.md`
 - [ ] **[B]** Repo clonado, `uv sync` rodando em PC2/PC3
 
 ### Shared modules (Trilha B, com par com A nos primeiros)
@@ -49,9 +50,9 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] `src/gateway/main.py` + `routes.py`: POST /ingest, POST /query, GET /health ✓ `main.py` (lifespan declara as filas), `routes.py` com `/health`, `/ingest` (fire-and-forget, doc_id content-addressable) e `/query` (RPC sobre AMQP, reply queue exclusiva, timeout 504); mypy strict + ruff ok, validação real no smoke (Task 14/15)
 
 ### Worker de ingestão (Trilha B)
-- [x] `src/workers/ingest/chunking.py` (recursive, overlap) — TDD ✓ 5 testes verdes
+- [x] `src/workers/ingest/chunking.py` (recursive, overlap) — TDD ✓ 8 testes verdes (teto duro: param `max_tokens`, `min(target,budget)` em char-space, 3 inputs patológicos)
 - [x] `src/workers/ingest/parsing.py` (PDF/MD/HTML) ✓ pypdf por página, md/html como texto bruto
-- [x] `src/workers/ingest/main.py` (parse → chunk → embed → upsert Qdrant) ⏳ revisado + mypy/ruff limpos; validação real só no smoke (Task 14)
+- [x] `src/workers/ingest/main.py` (parse → chunk → embed → upsert Qdrant) ✓ robustez: fronteira de erro por chunk (`except httpx.HTTPStatusError` → skip + `log.warning`), upsert incremental por página, contador `indexed_total`; validado no smoke da Task 15 (122 chunks, 3 citações)
 
 ### Worker de query (Trilha B)
 - [x] `src/workers/query/prompt_builder.py` (templates + truncamento) — TDD ✓ 7 testes verdes, mypy strict ok
@@ -67,7 +68,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 ### Validação (Trilha C)
 - [x] `scripts/smoke_test.py` + `Makefile` ✓ ruff/mypy strict verdes (validação real só na Task 15)
 - [x] `samples/README.md` instruindo cada pessoa a pôr um PDF curto como `samples/exemplo.pdf` (PDFs são docs de terceiros — gitignored, não versionados)
-- [ ] **`make dev` + `make pull-models` + `make smoke` passam**
+- [x] **`make dev` + `make pull-models` + `make smoke` passam** ✓ 2026-05-18: resposta fundamentada, 3 citações, 122 chunks; `pytest` 44 verdes
 - [ ] Captura `data/b1-smoke.txt` (saída + logs estruturados) para o doc técnico
 
 ---

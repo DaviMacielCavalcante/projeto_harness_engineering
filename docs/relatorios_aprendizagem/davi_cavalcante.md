@@ -213,6 +213,139 @@ A Task 13 começou pelo `prompt_builder` — o módulo que monta o prompt final 
 
 A lição transversal da Task 13: quase todos os bugs foram **semântica fina de primitivas** (string como conjunto vs prefixo, `-1` do `find`, Path vs file, binding de argumento de dataclass) e **confusão conceitual de papéis** (system vs user) — não erro de algoritmo. O loop de truncamento, que era a única lógica "de verdade", saiu certo de primeira. Engenharia de contexto é, ao mesmo tempo, decisão de produto (o que entra no prompt e por quê) e precisão cirúrgica nas primitivas que montam esse texto.
 
+### 2.14 Integração e infra: a primeira execução real do pipeline
+
+Fechado o código do B1 (Tasks 8–14, tudo verde no mypy/ruff), veio a Task 15
+— **a aceitação**, primeira vez que o pipeline roda de verdade contra a
+stack subida. Aprendi mais sobre "verde ≠ correto" aqui do que em qualquer
+review, porque os problemas não foram de código nenhum.
+
+**Código que passa no linter nunca rodou.** `handle_document` e
+`handle_query` passaram mypy strict + ruff e mesmo assim **nunca executaram**.
+A primeira tentativa de subir nem chegou no meu código: quebrou em infra. A
+lição do dia inteiro (do `args.wat`, do `str+int`) escalou de camada: type
+checker prova forma, não comportamento; e nem o comportamento importa se a
+stack não sobe.
+
+**Config local não é versionada — e isso é um passo de setup.** `make dev`
+falhou de cara: `env file .env.local not found`. O `.env.local` é
+gitignored de propósito (config de máquina, cada dev faz o seu a partir do
+`.env.example`); o `docker compose` exige o `env_file` existir. Entendi na
+prática a separação `.env.example` (versionado, template) vs `.env.local`
+(local, real) que eu só tinha lido na teoria no `config.py`.
+
+**Ler log em escala: volume não é problema.** O RabbitMQ vomitou centenas
+de linhas no boot — `Application mnesia exited with reason: stopped`,
+`rebuilding indices from scratch`, `peer discovery ... does not contain the
+local node []`. Pareceu desastre; era boot **saudável** (single-node, data
+dir vazio). Aprendi a varrer log por `ERROR`/`exited with reason: {error}`/
+exit ≠ 0, não por existir `[warning]` ou muito `[info]`. E que `docker
+compose ps` (coluna STATUS: Up/Exited/healthy) diagnostica estado de
+container muito melhor que `tail` em log.
+
+**O plano é rascunho; a ferramenta instalada manda.** O comentário do
+`docker-compose.yml` dizia que o bloco GPU era "ignorado se não tiver
+toolkit". O `docker compose` v2 **não ignora — falha duro**
+(`could not select device driver "nvidia"`). Mesmíssima lição do
+`asyncio.TimeoutError`→builtin e do `qdrant.search` deprecado (§2.8, §2.13):
+documentação/plano envelhece, confie no que está instalado.
+
+**Habilitar GPU é uma cadeia em camadas.** Diagnostiquei com `lspci -nnk`:
+a linha da NVIDIA tinha `Kernel modules: nvidiafb, nouveau` mas **sem**
+`Kernel driver in use: nvidia` — driver proprietário ausente, por isso não
+havia `nvidia-smi`. A cadeia é hardware → driver proprietário → NVIDIA
+Container Toolkit → Docker; não dá pra pular camada. Máquina híbrida (Intel
+UHD pro vídeo + RTX 4060 Ti pra cálculo) é o cenário ideal e foi o que tinha.
+
+**Defeito de repo só aparece executando.** O bloco `deploy.resources` (GPU)
+do `ollama` está obrigatório no compose, então qualquer host sem GPU/toolkit
+(colega, clone limpo) não sobe — quebra o "smoke a partir de clone limpo" do
+B5. Isso **não** apareceu em review nenhum; só rodando num host sem o toolkit
+configurado. Reforça que execução real é uma camada de verificação que
+review e type-check não cobrem. Documentei o setup como runbook executável
+(`docs/setup-gpu-pc1.md`) — mesma filosofia de spec-antes-de-código (§3.1),
+agora aplicada a infra: a pré-condição vira documento, não conhecimento
+tribal.
+
+### 2.15 Debugar o pipeline real: contrato do chunker e fronteira de erro do worker
+
+Com a GPU no ar, o `make smoke` finalmente rodou o meu código de ponta a
+ponta — e foi onde aprendi mais nesta sessão. Quatro camadas de bug
+(GPU → toolkit → chunker → worker), todas invisíveis pro mypy/ruff.
+
+**O verde do script não é o marco.** O smoke saiu `[smoke] OK` com **0
+citações** e a resposta-fallback "could not find this information". O exit
+code mentiu porque "sem citações" era só AVISO no script, não FALHA. Pior
+que o §2.14: lá o verde era do type checker; aqui era do meu próprio teste
+de aceitação. A definição do marco e o check executável tinham divergido.
+
+**Leia o log de quem produziu o erro, não de quem recebeu.** O worker via
+`HTTP 500`; a causa só apareceu no log do **Ollama**: `llm embedding error:
+the input length exceeds the context length`. Os dois IPs no GIN log
+(`.0.6` ingest falhando, `.0.8` query passando) explicaram por que o smoke
+"rodava" sem indexar nada — a pergunta é curta e embeda, os chunks do PDF
+estouravam. Sintoma e causa moram em serviços diferentes.
+
+**Heurística não é garantia, e não se audita sozinha.** O
+`count_tokens_approx` (chars/4, §2.10) é regra de inglês com tokenizer BPE.
+Texto em PT, extraído de PDF (tabela, EAP), tokenizado por WordPiece:
+subestima feio — chunk que o código achava ~800 tokens tinha >2048 reais,
+e o nomic recusava. Corolário que ficou: pra *provar* o contrato o teste
+precisa medir token real; uma heurística só prova que concorda com ela
+mesma. Tokenizer real adiado pro B2 — exatamente o que a docstring que eu
+escrevi na §2.10 já previa. A realidade cobrou o cheque mais cedo.
+
+**Mira vs teto, e a unidade que me mordeu três revisões seguidas.**
+`target_tokens` é preferência (qualidade de retrieval); `max_tokens` é
+restrição física do modelo. Não são a mesma variável — o dimensionamento
+correto é `min(target, budget)`. Mas o budget nascia em tokens e o loop
+media `len()` em chars; levei três rodadas de review pra a conversão `*4`
+encaixar (e numa delas introduzi perda silenciosa de 75% do conteúdo com
+`passo ≠ fatia`). Aprendi a tratar unidade como invariante explícito,
+convertido e nomeado **uma vez** (`budget_chars`) — conversão espalhada foi
+a raiz de todos esses bugs.
+
+**Código defensivo morto é dívida, não segurança.** Eu ia escrever uma
+varredura-de-garantia no chunker. Depois da prova algébrica de que o teto
+nunca estoura, ela virou redundante (nunca dispara) **e** cega (mediria com
+a mesma métrica falha). Cancelei antes de escrever. O backstop real do
+risco "chars/4 mentiu" mora na fronteira de execução (o embedding recusando),
+não no chunker — e a produção confirmou: os chunks que sobraram grandes
+foram pegos lá, não numa varredura que não existe.
+
+**Fronteira de erro: "chunk ruim, siga" vs "mundo quebrado, pare".**
+Capturar `httpx.HTTPStatusError` (pula o chunk, segue o doc) e deixar
+`httpx.TransportError` propagar (Ollama fora = pular não faz sentido, todo
+chunk falharia). `except Exception` largo mascara bug próprio — provei na
+pele: um typo `e.responde` *dentro do próprio handler de erro*
+reintroduziu, silencioso, o crash que o handler existia pra evitar. A
+camada de retry (tenacity, §2.4) e a fronteira se encaixam: o retry filtra
+o transitório, o `except` lida com o que sobrou (permanente nesta execução).
+
+**Skip invisível ≈ perda silenciosa.** Meu primeiro `except` tinha
+`log.info("")`. Um chunk descartado sem rastro é tão ruim quanto um crash
+sem rastro. Virou `log.warning("ingest.chunk.skipped", doc_id=...,
+chunk_index=..., page=..., status=...)` — perda auditável, com
+`correlation_id` pra reconstituir o fluxo (§2.3).
+
+**Tudo-ou-nada transforma falha parcial em total.** O upsert era único no
+fim do documento; uma exceção no meio descartava até os chunks que já
+tinham embedado. Virou upsert incremental por página + um contador que só
+cresce (resetar `points` quebrou o `len(points)` do log final — consertar
+uma coisa expôs a suposição em outra). Idempotência por ID derivado de
+posição, não de conteúdo: limitação que assumi explicitamente, replay real
+é B3.
+
+O resultado: 122 chunks indexados, resposta fundamentada sobre o conteúdo
+real do PDF, 3 citações válidas. Os chunks pulados (`chunk_index 1`, págs.
+2–4, status 500) são a prova viva de que `chars/4` não garante nem com a
+margem `//2` — e a razão de o backstop certo ser a fronteira do worker, não
+o chunker. Levei o pipeline de "verde mentindo" a "verde porque funciona",
+e a diferença não estava em nenhum review nem type-check: estava na
+execução. É o §2.14 fechando — execução real é uma camada de verificação
+própria, e o code-partner me fez *debugar* cada camada em vez de receber o
+patch pronto.
+
 ---
 
 ## 3. Aprendizados de processo e metodologia
@@ -247,7 +380,7 @@ A sessão de 17/05 cristalizou dois aprendizados de processo que não são sobre
 
 ## 4. O que ainda quero aprender (em aberto pros próximos blocos)
 
-- **B1 finalização**: Tasks 8 (gateway FastAPI completo), 9 (chunking recursivo, 5 testes), 10 (parsing PDF/MD/HTML), 11 (worker de ingestão fim-a-fim — `handle_document` + `main`) e 12 (prompts versionados) fechadas. Task 13 parcial: `prompt_builder.py` fechado (TDD, 7 testes verdes, mypy strict), falta `workers/query/main.py` (consumer loop do query-worker). Pendente também a Task 14 (smoke test + Makefile). O `handle_document`/`main` do ingest e o futuro `main` do query ainda não foram exercitados de verdade — só revisados e mypy/ruff limpos; a validação real é o smoke da Task 14.
+- **B1 finalização**: Tasks 8–14 com **código fechado** e gates verdes (mypy strict + ruff): gateway (3 endpoints), chunking, parsing, ingest worker, prompts, `prompt_builder` (TDD 7 testes), query worker (`handle_query` RPC), `Makefile` e `scripts/smoke_test.py`. **Task 15 (aceitação) iniciada e bloqueada** na pré-condição `[A]` do B1: GPU no PC1 (faltava driver NVIDIA proprietário + nvidia-container-toolkit). A stack só subiu pela metade — infra (redis/qdrant/rabbitmq) OK, mas `ollama`/`gateway`/workers não iniciaram pelo erro de GPU. Ou seja: **`handle_document` e `handle_query` ainda não rodaram de verdade nem uma vez** — só mypy/ruff. Setup de GPU documentado em `docs/setup-gpu-pc1.md`; o smoke ponta-a-ponta (e os bugs "verde mas quebra" que ele vai revelar) fica pendente até a GPU subir.
 - **B2**: cache distribuído (L1 in-memory, L2 Redis), reranker com cross-encoder bge-reranker-v2-m3, observabilidade Prometheus + Grafana.
 - **B3**: o pulo do gato deste projeto — passar de Modo 1 (Compose num host) pra Modo 2 (3 PCs reais via Tailscale). Aqui vou aprender de verdade sobre rede entre hosts, IaC com Terraform/Ansible, e tolerância a falhas em ambiente distribuído real (não simulado).
 - **B4**: experimentos quantitativos (latência, throughput, tolerância a falhas) e — se o cronograma permitir — comparação Ollama vs vLLM (bônus +10).
