@@ -25,6 +25,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] **Sessão 2026-05-16:** B1 `workers/ingest/main.py` — `handle_document` (parse→idioma→chunk→embed→upsert idempotente) + `main` (closure como DI sobre `consume_forever`), modo code-partner; sem teste unitário (validação no smoke da Task 14)
 - [x] **Sessão 2026-05-17:** B1 `workers/query/prompt_builder.py` — `_load` + `build_prompt` (orçamento de chars, truncamento de cauda), TDD ✓ 7 testes verdes, mypy strict ok; criados os 3 prompts versionados (`system_qa_pt/en`, `user_qa_template`); `USO_DE_IA.md` §2.5 + `CLAUDE.md` atualizados (granularidade de TODO por experiência declarada; Claude não executa pytest/ruff/mypy nem commita), modo code-partner. **+ `workers/query/main.py`** — `handle_query` (validar → embed → retrieval Qdrant → build_prompt → generate → publica `QueryResponse` no `reply_to`, RPC sobre AMQP; caminho sem-hits curto-circuita o LLM) + `main` (closure como DI), mypy strict + ruff ok, sem unit (validação no smoke da Task 14). **Task 13 fechada.** **+ Task 14:** `Makefile` completo + `scripts/smoke_test.py` (health → ingest → wait → query → veredito, exit code), ruff/mypy strict verdes; `samples/eap_es_v1.pdf` adicionado. Código do B1 completo — falta só a aceitação (Task 15, contra stack real).
 - [x] **Sessão 2026-05-18:** GPU PC1 habilitada (driver + NVIDIA Container Toolkit, Mint 22.3; runbook `docs/setup-gpu-pc1.md`). **Task 15 destravada:** smoke falhava em `Ollama 500 "input exceeds context length"` — chunks > teto do nomic (2048) porque `count_tokens_approx` (chars/4) subestima PT+PDF+WordPiece. Correções, modo code-partner: (a) `chunking.py` ganhou `max_tokens` + dimensionamento `min(target,budget)` convertido a char-space, **8 testes verdes** (3 patológicos); (b) `workers/ingest/main.py` — fronteira de erro por chunk (`except httpx.HTTPStatusError` → skip + `log.warning ingest.chunk.skipped`), upsert incremental por página, contador `indexed_total`. **`make smoke` passa**: resposta fundamentada, 3 citações, 122 chunks indexados; `pytest` 44 verdes. Cancelado o "TODO-2" (varredura no chunker — redundante+cega; backstop real é a fronteira do worker). Pendente: captura `data/b1-smoke.txt` + `ruff`/`mypy` formais.
+- [x] **Sessão 2026-05-18/19:** Tailnet **dedicado** do trio criado (owner com identidade pessoal não-CESUPA — pegadinha do domínio de e-mail resolvida); PC1 `pc1-davi` + PC2 `pc2-jm` conectados, ping **direct** (~113ms — piso de latência inter-PC registrado p/ o B4); PC3 pendente (colega indisponível). Runbooks **`docs/setup-tailscale.md`** e **`docs/setup-gpu-pc1.md`** escritos (este fechava 4 referências penduradas). **B2 iniciado, modo code-partner:** Task 2 `cache.py` (cache-aside L1/L2 Redis, `Protocol` p/ DI) — TDD ✓ **4 testes verdes**, mypy/ruff ok; bugs reais capturados no ciclo vermelho→verde (cache-aside invertido, `str.join` ao contrário, `labelnames` chave×valor). Task 3 `metrics.py` — 10 métricas §7.1 (Counter/Histogram/Gauge), registro único; pegadinhas `registry=REGISTRY` e vírgula-de-tupla. Task 4 `/metrics` no gateway — endpoint ✓; middleware de medição **scaffoldado (miolo pendente)**. Docstrings limpas de resíduo de scaffold; `USO_DE_IA.md` §2.4 atualizado (IA passa a autorar documentação operacional). Pendente: middleware da Task 4, captura `data/b1-smoke.txt`.
 
 ---
 
@@ -34,7 +35,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 **Plano detalhado:** [`b1-setup-e-pipeline-minimo.md`](docs/superpowers/plans/2026-05-09-tema5-b1-setup-e-pipeline-minimo.md)
 
 ### Pré-condições (paralelo, dia 1)
-- [ ] **[C]** Tailscale instalado e autenticado nos 3 PCs
+- [ ] **[C]** Tailscale nos 3 PCs — **parcial** (tailnet dedicado; PC1 `pc1-davi` + PC2 `pc2-jm` direct ✓; PC3 pendente). Runbook `docs/setup-tailscale.md`
 - [ ] **[C]** Docker e Docker Compose instalados nos 3 PCs
 - [x] **[A]** GPU NVIDIA + nvidia-container-toolkit no PC1 ✓ driver + toolkit no PC1 (Mint 22.3); runbook `docs/setup-gpu-pc1.md`
 - [ ] **[B]** Repo clonado, `uv sync` rodando em PC2/PC3
@@ -78,12 +79,12 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 **Marco luz-verde:** smoke estendido valida 2 filas, rerank, cache L1/L2, citações, /metrics.
 **Plano:** [`b2-pipeline-completo.md`](docs/superpowers/plans/2026-05-09-tema5-b2-pipeline-completo.md)
 
-- [ ] **[A]** `/metrics` no gateway (Prometheus) + middleware de medição
+- [ ] **[A]** `/metrics` no gateway (Prometheus) + middleware de medição — endpoint ✓; middleware scaffoldado (miolo pendente)
 - [ ] **[B]** Refatorar ingestão em duas filas (`document_handler` + `chunk_handler`)
 - [ ] **[A]** Rerank service (`src/rerank_service/`) com cross-encoder bge-m3 + Dockerfile
 - [ ] **[B]** `RerankerClient` no query-worker — TDD
-- [ ] **[C]** `src/shared/cache.py` (Redis L1 e L2) — TDD
-- [ ] **[C]** `src/shared/metrics.py` (counters, histograms, gauges)
+- [x] **[C]** `src/shared/cache.py` (Redis L1 e L2) — TDD ✓ 4 testes verdes, mypy/ruff ok (code-partner)
+- [x] **[C]** `src/shared/metrics.py` (counters, histograms, gauges) ✓ 10 métricas §7.1, registro único (code-partner)
 - [ ] **[B]** `src/shared/session.py` (histórico + sumarização adaptativa) — TDD
 - [ ] **[A]** Function calling `cite_source` (`prompts/tools/cite_source.json`) + prompts v0.2.0-b2
 - [ ] **[B]** Query-worker integrado: cache L1 → retrieval → rerank → cache L2 → generate

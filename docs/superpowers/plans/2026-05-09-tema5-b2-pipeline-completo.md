@@ -86,6 +86,8 @@ Expected: download de torch + transformers + sentence-transformers (alguns minut
 
 ## Task 2: Cache distribuído no Redis (`shared/cache.py`)
 
+> **Status:** ✅ Concluída em 2026-05-18 (modo code-partner — IA entregou teste-contrato + esqueleto; integrante escreveu o miolo). 4 testes verdes, mypy/ruff ok. Detalhe no `TODO.md`.
+
 **Files:**
 - Create: `src/shared/cache.py`
 - Create: `tests/unit/test_cache.py`
@@ -206,6 +208,8 @@ Expected: 3 passed.
 
 ## Task 3: Métricas Prometheus (`shared/metrics.py`)
 
+> **Status:** ✅ Concluída em 2026-05-19 (code-partner — scaffold + preenchimento dos TODOs pelo integrante). 10 métricas da §7.1, registro único, mypy/ruff + import smoke ok. Detalhe no `TODO.md`.
+
 **Files:**
 - Create: `src/shared/metrics.py`
 
@@ -302,6 +306,8 @@ Expected: imprime `text/plain; version=0.0.4; charset=utf-8 <bytes>`.
 ---
 
 ## Task 4: Endpoint `/metrics` no gateway
+
+> **Status:** 🔶 Parcial (2026-05-19). Step 1 (endpoint `/metrics` em `routes.py`) ✅ feito pela IA (boilerplate). Step 2 (middleware de medição em `main.py`) scaffoldado — miolo pendente com o integrante (code-partner).
 
 **Files:**
 - Modify: `src/gateway/main.py`

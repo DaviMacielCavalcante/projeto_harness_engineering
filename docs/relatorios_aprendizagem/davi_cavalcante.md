@@ -393,3 +393,26 @@ A sessão de 17/05 cristalizou dois aprendizados de processo que não são sobre
 Em 4 dias trabalhando no Bloco B1, saí de "sei o que é um sistema RAG no abstrato" pra ter os tijolos da fundação no código, com tooling Python moderno, observabilidade desenhada desde o início e infraestrutura Docker preparada pra escalar pra 3 hosts. Mais importante que os artefatos individuais foi internalizar uma forma de trabalhar: **spec antes de código, convenção antes de disciplina, IA como parceiro crítico em vez de gerador opaco**.
 
 Os próximos blocos vão me forçar a sair da zona de conforto do "tudo num host" pra lidar com rede física, particionamento de carga e falhas reais — que é onde a disciplina de Programação Distribuída e Paralela realmente vai cobrar o que eu aprendi.
+
+---
+
+## 6. Aprendizados — sessões 2026-05-18/19 (fechamento do B1, início do B2)
+
+> *Nota de organização (revisar depois): estes pontos continuam a numeração
+> temática dos §2/§3 — ao revisar, realocar e renumerar como fizer sentido.*
+
+### 6.1 Rede distribuída deixou de ser diagrama
+
+Até aqui o "distribuído" era Modo 1 — tudo num host, distribuição no papel. Configurar o Tailscale entre PC1 e PC2 foi a primeira vez que o sistema existiu de fato entre máquinas físicas. Duas coisas ficaram. Primeira: o Tailscale agrupa todo o domínio `@aluno.cesupa.br` num tailnet único, então logar com a conta da faculdade me jogou num tailnet compartilhado com a turma inteira — a saída foi criar um tailnet dedicado com identidade pessoal. Isso não é detalhe de TI; é decisão de superfície de exposição, porque PC1 publica Redis/Qdrant/Ollama sem autenticação. Segunda: o `tailscale ping` PC1↔PC2 deu **direct ~113ms** — não é relay, é a latência real da internet entre dois locais físicos distintos. Esse número é um piso: todo round-trip worker→PC1 (embed, retrieval, hop no RabbitMQ) vai pagá-lo, e os experimentos de latência/throughput do B4 terão esse floor embutido. Aprendi a ler `direct` vs `DERP` na saída do ping como dado de arquitetura, não como "conectou, beleza".
+
+### 6.2 O ciclo vermelho pega o que eu sozinho não pegaria
+
+No `cache.py` (code-partner, TDD) cometi três bugs e o teste-como-spec achou os três: cache-aside invertido (tratei o *miss* como se fosse *hit*), `str.join` usado ao contrário (passei a string de dados como separador — e como string é iterável de caracteres, o resultado descartou os ids silenciosamente), e confundir chave de label com valor. O mais instrutivo foi o **"verde falso"**: o import smoke do `metrics.py` passou e me deu confiança, mas escondia um bug que só estoura quando o worker chama `.labels()` — verde agora, quebra depois. A lição que fica: teste que passa não prova corretude; tem que ser o teste *certo*, exercitando o caminho que de fato vai quebrar. Isso aprofunda a 3.2 — TDD não é cerimônia de "ficou verde", é escolher o que o vermelho precisa cobrir.
+
+### 6.3 Observabilidade é design, não digitação
+
+Preencher o `metrics.py` me obrigou a escolher o tipo de cada métrica pela *semântica do dado*: Counter acumula (tokens, erros), Gauge sobe e desce (requests em voo no Ollama, profundidade de fila), Histogram é distribuição (latência → p50/p95/p99). E duas armadilhas que não dão erro: esquecer `registry=REGISTRY` faz a métrica sumir silenciosamente do scrape; label de alta cardinalidade (`correlation_id`, query crua) explodiria a memória do Prometheus — isso vai pro log estruturado, não pra label. Conectei com o requisito 4.4 e com os Exp 1/2 do B4: sem as métricas certas, os experimentos não têm o que plotar. Observabilidade não é enfeite no fim — é o instrumento que mede se o paralelismo do projeto funciona.
+
+### 6.4 Mover fronteiras com a IA é trabalho meu (continuação da 3.5)
+
+Defini duas convenções novas: documentação é responsabilidade da IA (parei de aceitar doc empurrada de volta como "confere se você esqueceu o git add"), e o comando ruff que a IA sugere já vem com `--fix`. E quando pedi pra atualizar os documentos, a fronteira do §3.5 reapareceu invertida: a IA se recusou a escrever este resumo de aprendizado achando que seria ghost-writing do entregável individual. Tive que esclarecer a convenção do projeto — a IA *rascunha* o resumo como apoio de memória; eu reviso, edito e assumo a autoria. O paralelo com a 3.5 é direto: lá a IA segurou eu querendo arredondar canto num doc de honestidade (certo dela); aqui ela travou por excesso de zelo numa tarefa legítima (errado dela) — nos dois casos, quem define onde fica a fronteira do que a IA faz sou eu, não ela. Trabalhar com IA como parceiro é, recorrentemente, eu policiar e mover esses limites de forma deliberada.

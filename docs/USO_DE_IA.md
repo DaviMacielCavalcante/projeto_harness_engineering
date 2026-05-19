@@ -47,8 +47,9 @@ A IA foi utilizada como **co-piloto técnico** nas seguintes etapas, sob direç�
 - A IA escreveu **código de partida**; a equipe revisa, ajusta, corrige bugs, integra entre máquinas reais, escreve testes complementares, executa, mede e documenta os resultados.
 
 ### 2.4 Apoio à documentação
-- Esqueleto do documento técnico final (8.2).
-- Esqueleto dos slides da apresentação (8.3).
+- Esqueleto do documento técnico final (8.2) e dos slides da apresentação (8.3).
+- A partir de **2026-05-18**, a IA passou a **autorar integralmente** a documentação operacional e de processo: runbooks de setup (`docs/setup-tailscale.md`, `docs/setup-gpu-pc1.md`), manutenção das docstrings dos módulos e atualização dos artefatos de tracking (`TODO.md`, status nos planos). Os achados que só a equipe possui (resultados de rede por host, o que travou em cada máquina) entram como campos explicitamente marcados a preencher — a IA não fabrica fatos.
+- **Fronteira preservada:** o documento técnico final, os slides e os **relatórios individuais de aprendizagem** (entregável 8.4) continuam de autoria da equipe (ver §3, item 4). Nesses, a IA estrutura e reúne matéria-prima factual; a reflexão em primeira pessoa é de cada integrante — escrevê-la pela IA seria exatamente o anti-padrão que esta declaração existe para evitar.
 
 ### 2.5 Pareamento guiado para aprendizado (a partir de 2026-05-10)
 - Em parte das sessões de implementação, a IA atua em **modo parceiro de código** (skill local `code-partner`): fornece a **estrutura de partida** (imports, assinaturas tipadas, docstrings, `TODO`s comentados) e o **contrato executável** da tarefa (a suíte de testes que define o comportamento esperado), conduzindo o desenvolvimento via **perguntas socráticas**.
@@ -110,4 +111,4 @@ Os modelos de linguagem hospedados (`qwen2.5:7b-instruct`, `nomic-embed-text`, `
 
 ---
 
-**Última atualização:** 2026-05-17. Este documento será atualizado se o padrão de uso da IA mudar significativamente ao longo do desenvolvimento.
+**Última atualização:** 2026-05-19 (§2.4 — IA passou a autorar a documentação operacional/de processo; fronteira de autoria dos relatórios individuais reafirmada). Este documento será atualizado se o padrão de uso da IA mudar significativamente ao longo do desenvolvimento.
