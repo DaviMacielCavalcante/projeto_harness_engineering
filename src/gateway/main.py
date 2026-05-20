@@ -9,15 +9,18 @@ em `app.state.rabbitmq`, ficando disponível para as rotas via
 `request.app.state.rabbitmq`.
 """
 
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
+from starlette.middleware.base import RequestResponseEndpoint
 
 from src.gateway.routes import router
 from src.shared.config import settings
 from src.shared.logging import configure_logging
 from src.shared.messaging import connect, declare_queues
+from src.shared.metrics import request_duration
 
 log = configure_logging("gateway")
 
@@ -48,3 +51,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="RAG Distribuído — Gateway", lifespan=lifespan)
 app.include_router(router)
+
+
+@app.middleware("http")
+async def measure_requests(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    """Cronometra cada request HTTP e alimenta o Histogram request_duration.
+
+    Roda em volta de toda request (FastAPI middleware). O resultado vira a
+    base dos painéis de latência p50/p95/p99 do Grafana (spec §7.2).
+    """
+    if request.url.path == "/metrics":
+        return await call_next(request)
+
+    start = time.perf_counter()
+    status_code = "500"
+
+    try:
+        response = await call_next(request)
+
+        status_code = str(response.status_code)
+
+        return response
+    finally:
+        time_elapsed = time.perf_counter() - start
+        request_duration.labels(endpoint=request.url.path, status=status_code).observe(time_elapsed)

@@ -4,7 +4,7 @@ Todo componente (gateway, workers, rerank-service) importa as métricas
 **deste módulo** e expõe `metrics_response()` no seu `/metrics`. Registro
 único = um `CollectorRegistry` compartilhado, sem métricas duplicadas.
 
-Como escolher o tipo de métrica (use isto para preencher os TODOs):
+Critério de escolha do tipo de cada métrica (referência de design):
 
 - **Counter** — só sobe, nunca desce. Totais acumulados: nº de erros,
   tokens, docs indexados, cache hits. Lê-se via `rate()` no Prometheus.
@@ -20,7 +20,7 @@ fechado de valores (`status`, `phase`, `cache_layer`). NUNCA use
 `correlation_id`, query crua ou `doc_id` como label — explode a memória do
 Prometheus. Isso vai pro log estruturado (Loki), não pra label de métrica.
 
-Mapa das métricas ↔ spec §7.1 está nos TODOs abaixo.
+As 10 métricas abaixo implementam o catálogo da spec §7.1.
 """
 
 from prometheus_client import (

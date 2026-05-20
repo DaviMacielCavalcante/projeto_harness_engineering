@@ -2,6 +2,7 @@
 
 Endpoints:
     - `GET /health` — liveness probe trivial.
+    - `GET /metrics` — registro Prometheus em formato texto (scrape).
     - `POST /ingest` — aceita um documento e publica na fila de ingestão (fire-and-forget).
     - `POST /query` — pergunta sob padrão RPC sobre RabbitMQ (publica + aguarda reply queue).
 """
@@ -10,11 +11,12 @@ import hashlib
 import json
 import uuid
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from src.shared.config import settings
 from src.shared.logging import bind_correlation_id, clear_correlation_id, configure_logging
 from src.shared.messaging import publish_json
+from src.shared.metrics import metrics_response
 from src.shared.schemas import (
     DocumentMessage,
     IngestRequest,
@@ -32,6 +34,17 @@ router = APIRouter()
 async def health() -> dict[str, str]:
     """Liveness probe: confirma que o app subiu e o event loop responde."""
     return {"status": "ok"}
+
+
+@router.get("/metrics")
+async def metrics() -> Response:
+    """Expõe o registro Prometheus no formato texto (scrape do Prometheus).
+
+    Boilerplate de cola: serializa o `REGISTRY` de `src.shared.metrics` e
+    devolve com o `Content-Type` que o Prometheus espera.
+    """
+    body, content_type = metrics_response()
+    return Response(content=body, media_type=content_type)
 
 
 @router.post("/ingest", response_model=IngestResponse, status_code=202)

@@ -13,7 +13,7 @@ client concreto, só que ele tem `get`/`setex`. Isso deixa o módulo testável
 com um fake em memória (ver `tests/unit/test_cache.py`) sem subir Redis —
 e é exatamente o bucket "TDD canônico" do CLAUDE.md.
 
-Padrão cache-aside, para fixar antes de implementar:
+Padrão cache-aside:
     valor = cache.get(chave)
     se valor existe        -> usa (HIT)
     se valor é None (miss) -> calcula caro, cache.set(chave, valor), usa
