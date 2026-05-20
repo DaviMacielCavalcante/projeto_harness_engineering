@@ -95,6 +95,20 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  rerank-service:
+    build:
+      context: .
+      dockerfile: infra/docker/rerank.Dockerfile
+    container_name: rag-rerank
+    profiles: ["all", "server"]
+    env_file:
+      - .env.local
+    environment:
+      SERVICE_NAME: rerank-service
+    ports:
+      - 8081:8081
+    restart: unless-stopped
+
   ingest-worker:
     <<: *worker-base                     # merge com x-worker-base lá em cima
     container_name: rag-ingest-worker

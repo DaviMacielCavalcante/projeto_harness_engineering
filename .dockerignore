@@ -1,0 +1,81 @@
+# Tudo aqui é EXCLUÍDO do build context — não vai pro daemon nem pra imagem.
+# Sintaxe igual à do .gitignore (com algumas diferenças sutis em globbing).
+# Regra mental: se não é necessário pra build/runtime de NENHUM container do
+# projeto, ignore. O Dockerfile sabe o que precisa via `COPY`.
+
+# --- VCS ---
+.git/
+.gitignore
+.gitattributes
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+.python-version
+
+# --- Caches de tool ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Env files (NÃO entram na imagem; o compose passa via env_file em runtime) ---
+.env
+.env.local
+.env.distributed
+.env.*.local
+
+# --- Dados, artefatos, samples ---
+data/
+*.log
+samples/*.pdf
+samples/*.PDF
+
+# --- Volumes Docker locais (montagens — não devem estar na build) ---
+qdrant_storage/
+ollama_models/
+rabbitmq_data/
+redis_data/
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# --- Docker / IaC ---
+docker-compose.override.yml
+.dockerignore
+Dockerfile*
+!infra/docker/*.Dockerfile
+
+# --- Docs e planos (não rodam na imagem; ficam no host pra leitura) ---
+docs/
+TODO.md
+README.md
+CLAUDE.md
+
+# --- Testes (em prod a imagem não precisa de tests/) ---
+tests/
+
+# --- Scripts e infra que rodam fora do container ---
+scripts/
+infra/terraform/
+infra/ansible/
+infra/grafana/
+infra/loki/
+infra/promtail/
+infra/prometheus/
+
+# --- Notebooks (não usados nesse projeto, mas hábito) ---
+*.ipynb_checkpoints
+*.ipynb
