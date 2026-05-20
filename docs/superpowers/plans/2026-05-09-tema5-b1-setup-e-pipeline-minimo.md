@@ -1002,7 +1002,7 @@ app = FastAPI(title="RAG Distribuído — Gateway", lifespan=lifespan)
 app.include_router(router)
 ```
 
-- [ ] **Step 2: Implementar `src/gateway/routes.py`** ⏳ `/health` pronto; `/ingest` e `/query` pendentes
+- [x] **Step 2: Implementar `src/gateway/routes.py`** ✓ `/health`, `/ingest` (fire-and-forget, doc_id content-addressable), `/query` (RPC sobre AMQP, reply queue exclusiva, timeout 504), `/metrics` (scrape Prometheus); mypy strict + ruff ok
 
 ```python
 import hashlib
