@@ -17,8 +17,8 @@ Por que serviço separado e não chamada in-process do query-worker?
   HF_HOME, o stack cai no cache default (``~/.cache/huggingface/``).
 """
 
-import time
 import os
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -111,7 +111,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     Em ambos os casos o `lifespan` é o único ponto que carrega o modelo
     — ele fica vivo em ``app.state.model`` enquanto o app vive.
     """
-    
     log.info("rerank.loading_model", model=MODEL_NAME)
     app.state.model = CrossEncoder(MODEL_NAME, max_length=512)
 
@@ -139,7 +138,7 @@ async def rerank(req: RerankRequest) -> RerankResponse:
 
     scores = app.state.model.predict(pairs).tolist()
 
-    zipped_scores = zip(req.candidates, scores)
+    zipped_scores = zip(req.candidates, scores, strict=True)
 
     sorted_scores = sorted(zipped_scores, key=lambda par: par[1], reverse=True)
 
