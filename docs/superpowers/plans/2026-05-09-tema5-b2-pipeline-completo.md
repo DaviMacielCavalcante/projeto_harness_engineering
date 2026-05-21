@@ -86,6 +86,8 @@ Expected: download de torch + transformers + sentence-transformers (alguns minut
 
 ## Task 2: Cache distribuído no Redis (`shared/cache.py`)
 
+> ✅ **Concluída** (2026-05-21, code-partner). Trilha C adiantada pelo autor → **C→A**. Status e notas no `TODO.md`.
+
 > **Status:** ✅ Concluída em 2026-05-18 (modo code-partner — IA entregou teste-contrato + esqueleto; integrante escreveu o miolo). 4 testes verdes, mypy/ruff ok. Detalhe no `TODO.md`.
 
 **Files:**
@@ -208,6 +210,8 @@ Expected: 3 passed.
 
 ## Task 3: Métricas Prometheus (`shared/metrics.py`)
 
+> ✅ **Concluída** (2026-05-21, code-partner). Trilha C adiantada pelo autor → **C→A**. Status e notas no `TODO.md`.
+
 > **Status:** ✅ Concluída em 2026-05-19 (code-partner — scaffold + preenchimento dos TODOs pelo integrante). 10 métricas da §7.1, registro único, mypy/ruff + import smoke ok. Detalhe no `TODO.md`.
 
 **Files:**
@@ -307,6 +311,8 @@ Expected: imprime `text/plain; version=0.0.4; charset=utf-8 <bytes>`.
 
 ## Task 4: Endpoint `/metrics` no gateway
 
+> ✅ **Concluída** (trilha A). Status e notas no `TODO.md`.
+
 > **Status:** 🔶 Parcial (2026-05-19). Step 1 (endpoint `/metrics` em `routes.py`) ✅ feito pela IA (boilerplate). Step 2 (middleware de medição em `main.py`) scaffoldado — miolo pendente com o integrante (code-partner).
 
 **Files:**
@@ -360,6 +366,8 @@ Expected: linhas em formato Prometheus, contadores `rag_*` declarados.
 ---
 
 ## Task 5: Refatorar ingestão em duas filas
+
+> ✅ **Concluída** (2026-05-21, code-partner). Trilha B adiantada pelo autor → **B→A**. Smoke estendido OK (123 chunks, 3 citações). Status e notas no `TODO.md`.
 
 **Files:**
 - Create: `src/workers/ingest/document_handler.py`
@@ -612,6 +620,8 @@ Expected: o smoke continua passando, mas agora você verá as filas `ingest.docu
 
 ## Task 6: Reranker service (`src/rerank_service/`)
 
+> ✅ **Concluída** (trilha A). Cold start 0.9s via `HF_HOME`+offline. Status e notas no `TODO.md`.
+
 **Files:**
 - Create: `src/rerank_service/main.py`
 - Create: `infra/docker/rerank.Dockerfile`
@@ -764,6 +774,8 @@ Expected: JSON com `items` ordenados pelo score; o item "a" deve ter score muito
 
 ## Task 7: Cliente reranker no query-worker (`reranker_client.py`)
 
+> ✅ **Concluída** (2026-05-21, code-partner, TDD 3 testes). Trilha B adiantada pelo autor → **B→A**. Status e notas no `TODO.md`.
+
 **Files:**
 - Create: `src/workers/query/reranker_client.py`
 - Create: `tests/unit/test_reranker_client.py`
@@ -849,6 +861,8 @@ Expected: 1 passed.
 ---
 
 ## Task 8: Function calling (cite_source) e prompts atualizados
+
+> ✅ **Concluída** (2026-05-21, code-partner — autor conduziu os prompts; IA fez o código e espelhou o `en`). Trilha A. **Atenção:** só os artefatos; o function calling real (`/api/chat`+`tools`, processar `tool_calls`, fallback regex) roda na **Task 10**. Status e notas no `TODO.md`.
 
 **Files:**
 - Create: `prompts/tools/cite_source.json`
