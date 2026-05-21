@@ -926,11 +926,13 @@ class ContextBlock:
 
 ## Task 9: Sessão e histórico (`shared/session.py`)
 
+> ✅ **Concluída** (2026-05-21, code-partner). Implementação **evoluiu o plano**: em vez do concat hardcoded, o `SessionStore` recebe um **`summarizer` injetável** (Strategy/DI) — default `concat_summarizer` (sem LLM) no B2, e o B3 pluga um summarizer-LLM sem tocar na classe. Testes mais ricos que o esboço abaixo (6 verdes, incluindo um summarizer-espião que prova que a estratégia injetada é a chamada). Status e notas no `TODO.md`.
+
 **Files:**
 - Create: `src/shared/session.py`
 - Create: `tests/unit/test_session.py`
 
-- [ ] **Step 1: Escrever teste**
+- [x] **Step 1: Escrever teste**
 
 ```python
 # tests/unit/test_session.py
@@ -971,7 +973,7 @@ async def test_session_empty_returns_empty_list():
     assert await store.get_summary("none") is None
 ```
 
-- [ ] **Step 2: Implementar**
+- [x] **Step 2: Implementar** *(versão final usa `summarizer` injetável — ver nota no topo da Task; o esboço abaixo é o do plano original)*
 
 ```python
 # src/shared/session.py
@@ -1017,10 +1019,10 @@ class SessionStore:
         await self._r.setex(self.KEY_HIST.format(sid=sid), self.HISTORY_TTL, json.dumps(history))
 ```
 
-- [ ] **Step 3: Rodar**
+- [x] **Step 3: Rodar**
 
 Run: `uv run pytest tests/unit/test_session.py -v`
-Expected: 2 passed.
+Expected: 2 passed. → na implementação final, **6 passed** (suíte estendida com summarizer injetável).
 
 ---
 
