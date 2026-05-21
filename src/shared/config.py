@@ -9,6 +9,8 @@ Em runtime:
 - Modo 2 (distribuído): preencher .env.distributed com IPs Tailscale.
 """
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,6 +60,12 @@ class Settings(BaseSettings):
     # Observabilidade
     log_level: str = "INFO"
     service_name: str = "unset"
+
+    # Worker de ingestão
+    # "documents" → só consome ingest.documents (parse + chunk + publish)
+    # "chunks"    → só consome ingest.chunks (embed + upsert no Qdrant)
+    # "both"      → consome as duas (default p/ dev e Modo 1)
+    ingest_role: Literal["documents", "chunks", "both"] = "both"
 
     # Retrieval
     retrieval_top_k_initial: int = 20

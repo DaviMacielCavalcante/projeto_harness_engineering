@@ -1,187 +1,88 @@
-"""Worker de ingestão fim-a-fim.
+"""Bootstrap do worker de ingestão (B2): roteia por ``INGEST_ROLE``.
 
-Consome a fila ``ingest.documents``, e para cada documento executa o pipeline
-completo do B1 dentro de um único handler (parse → detecta idioma → chunk →
-embed → upsert no Qdrant). A separação em duas filas
-(``ingest.documents`` → ``ingest.chunks``) descrita no spec entra só no B2.
+Substitui a versão "fat" do B1 (parse → chunk → embed → upsert num único
+handler). Agora o pipeline está dividido em dois handlers independentes:
 
-Sem teste unitário: este módulo é glue de IO (RabbitMQ + Ollama + Qdrant), a
-validação acontece no smoke ponta-a-ponta (Task 14).
+- ``document_handler.handle_document`` consome ``ingest.documents``.
+- ``chunk_handler.handle_chunk`` consome ``ingest.chunks``.
+
+A env ``INGEST_ROLE`` controla qual(is) consumer(s) este processo roda:
+
+- ``"documents"`` — só doc handler (não precisa de Ollama nem Qdrant)
+- ``"chunks"``    — só chunk handler (não toca em parsing/chunking)
+- ``"both"``      — roda os dois em paralelo, no mesmo processo (default,
+  útil em dev/Modo 1; no compose o profile ``all`` sobe 2 serviços
+  separados, um por role).
+
+Sem teste unitário (glue de IO). Validação no smoke estendido (Task 11/B2).
 """
 
 import asyncio
-import hashlib
 import socket
 from typing import Any
 
-import httpx
 from aio_pika.abc import AbstractIncomingMessage
-from langdetect import LangDetectException, detect
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.http import models as qmodels
 
 from src.shared.config import settings
-from src.shared.logging import (
-    bind_correlation_id,
-    clear_correlation_id,
-    configure_logging,
-)
+from src.shared.logging import configure_logging
 from src.shared.messaging import connect, consume_forever
 from src.shared.ollama_client import OllamaClient
-from src.shared.schemas import DocumentMessage
-from src.workers.ingest.chunking import chunk_text
-from src.workers.ingest.parsing import parse_document
+from src.workers.ingest.chunk_handler import ensure_qdrant_collection, handle_chunk
+from src.workers.ingest.document_handler import handle_document
 
 log = configure_logging("ingest-worker")
 HOSTNAME = socket.gethostname()
 
 
-async def ensure_qdrant_collection(qdrant: AsyncQdrantClient) -> None:
-    """Cria a collection do Qdrant se ainda não existir (idempotente).
-
-    Parameters
-    ----------
-    qdrant : AsyncQdrantClient
-        Cliente já conectado ao Qdrant.
-
-    Notes
-    -----
-    Vetores ``settings.embedding_dim`` (768d nomic) com distância cosseno.
-    """
-    collections = await qdrant.get_collections()
-
-    collections_names = [collection.name for collection in collections.collections]
-
-    if settings.qdrant_collection not in collections_names:
-        await qdrant.create_collection(
-            collection_name=settings.qdrant_collection,
-            vectors_config=qmodels.VectorParams(
-                size=settings.embedding_dim, distance=qmodels.Distance.COSINE
-            ),
-        )
-
-        log.info("qdrant.collection_created")
-
-
-async def handle_document(
-    payload: dict[str, object],
-    ollama: OllamaClient,
-    qdrant: AsyncQdrantClient,
-) -> None:
-    """Processa um documento da fila: parse → chunk → embed → upsert.
-
-    Parameters
-    ----------
-    payload : dict
-        Corpo JSON da mensagem (validar em :class:`DocumentMessage`).
-    ollama : OllamaClient
-        Cliente para gerar embeddings dos chunks.
-    qdrant : AsyncQdrantClient
-        Cliente para upsert dos pontos vetorizados.
-
-    Notes
-    -----
-    Envolver o corpo em ``bind_correlation_id`` / ``clear_correlation_id``
-    (try/finally) para que toda linha de log carregue o ``correlation_id``.
-    """
-    try:
-        doc = DocumentMessage.model_validate(payload)
-
-        bind_correlation_id(correlation_id=doc.correlation_id)
-
-        parsed_doc = parse_document(content_b64=doc.content_b64, source_type=doc.source_type)
-
-        if parsed_doc == []:
-            log.info("ingest.document.empty")
-            return
-
-        sample_doc = " ".join(text for _, text in parsed_doc)
-
-        try:
-            lang = detect(text=sample_doc[:500])
-        except LangDetectException:
-            lang = "unk"
-
-        points: list[qmodels.PointStruct] = []
-        chunk_index = 0
-        indexed_total = 0
-
-        for page, text in parsed_doc:
-            if not text.strip():
-                continue
-            chunks = chunk_text(
-                text=text,
-                target_tokens=settings.chunk_target_tokens,
-                overlap_tokens=settings.chunk_overlap_tokens,
-                max_tokens=settings.embedding_max_tokens,
-            )
-
-            for chunk in chunks:
-                if not chunk.strip():
-                    continue
-                try:
-                    vector = await ollama.embed(model=settings.embedding_model, text=chunk)
-
-                    vector_id = f"{doc.doc_id}:{chunk_index}"
-
-                    qdrant_id = hashlib.sha256(vector_id.encode()).hexdigest()
-
-                    id_int = int(qdrant_id, 16) % (2**63 - 1)
-
-                    point = qmodels.PointStruct(
-                        id=id_int,
-                        vector=vector,
-                        payload={
-                            "doc_id": doc.doc_id,
-                            "chunk_id": vector_id,
-                            "text": chunk,
-                            "source": doc.filename,
-                            "page": page,
-                            "lang": lang,
-                            "chunk_index": chunk_index,
-                        },
-                    )
-                except httpx.HTTPStatusError as e:
-                    log.warning(
-                        "ingest.chunk.skipped",
-                        doc_id=doc.doc_id,
-                        chunk_index=chunk_index,
-                        page=page,
-                        status=e.response.status_code,
-                    )
-                    continue
-                points.append(point)
-                chunk_index += 1
-                indexed_total += 1
-
-            if points:
-                await qdrant.upsert(collection_name=settings.qdrant_collection, points=points)
-                points = []
-
-        log.info("ingest.document.indexed", doc_id=doc.doc_id, chunks=indexed_total, host=HOSTNAME)
-
-    finally:
-        clear_correlation_id()
-
-
 async def main() -> None:
-    """Bootstrap do worker: conecta dependências e consome a fila para sempre."""
-    qdrant_client = AsyncQdrantClient(url=settings.qdrant_url)
-    ollama_client = OllamaClient(base_url=settings.ollama_url)
-
-    await ensure_qdrant_collection(qdrant=qdrant_client)
-    log.info("ingest-worker.ready")
+    """Conecta dependências conforme o role e consome as filas atribuídas."""
+    role = settings.ingest_role
+    log.info("ingest-worker.starting", role=role, host=HOSTNAME)
 
     async with connect(settings.rabbitmq_url) as conn:
+        tasks: list[asyncio.Task[None]] = []
 
-        async def handler(msg: AbstractIncomingMessage, payload: dict[str, Any]) -> None:
-            return await handle_document(
-                payload=payload, qdrant=qdrant_client, ollama=ollama_client
+        # --- Consumer de DOCUMENTOS (parse + chunk + publish) ---
+        if role in {"documents", "both"}:
+
+            async def doc_handler(msg: AbstractIncomingMessage, payload: dict[str, Any]) -> None:
+                await handle_document(payload=payload, rabbit_conn=conn)
+
+            tasks.append(
+                asyncio.create_task(
+                    consume_forever(
+                        conn=conn,
+                        queue_name=settings.queue_ingest_documents,
+                        handler=doc_handler,
+                        prefetch=2,
+                    )
+                )
             )
 
-        await consume_forever(
-            conn=conn, queue_name=settings.queue_ingest_documents, handler=handler, prefetch=2
-        )
+        # --- Consumer de CHUNKS (embed + upsert) ---
+        if role in {"chunks", "both"}:
+            qdrant = AsyncQdrantClient(url=settings.qdrant_url)
+            ollama = OllamaClient(base_url=settings.ollama_url)
+
+            await ensure_qdrant_collection(qdrant=qdrant)
+
+            async def on_chunk(msg: AbstractIncomingMessage, payload: dict[str, Any]) -> None:
+                await handle_chunk(msg=msg, payload=payload, ollama=ollama, qdrant=qdrant)
+
+            tasks.append(
+                asyncio.create_task(
+                    consume_forever(
+                        conn=conn,
+                        queue_name=settings.queue_ingest_chunks,
+                        handler=on_chunk,
+                        prefetch=8,
+                    )
+                )
+            )
+
+        log.info("ingest-worker.ready")
+        await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":

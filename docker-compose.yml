@@ -109,13 +109,26 @@ services:
       - 8081:8081
     restart: unless-stopped
 
-  ingest-worker:
-    <<: *worker-base                     # merge com x-worker-base lá em cima
-    container_name: rag-ingest-worker
+  # B2: pipeline de ingestão dividido em dois consumers independentes.
+  # Doc consumer (parse + chunk + publish na fila de chunks) é leve.
+  # Chunk consumer (embed + upsert) é IO-bound caro — escala separado.
+  ingest-worker-doc:
+    <<: *worker-base
+    container_name: rag-ingest-worker-doc
     profiles: ["all", "worker"]
     environment:
       WORKER_KIND: ingest
-      SERVICE_NAME: ingest-worker
+      INGEST_ROLE: documents
+      SERVICE_NAME: ingest-worker-doc
+
+  ingest-worker-chunk:
+    <<: *worker-base
+    container_name: rag-ingest-worker-chunk
+    profiles: ["all", "worker"]
+    environment:
+      WORKER_KIND: ingest
+      INGEST_ROLE: chunks
+      SERVICE_NAME: ingest-worker-chunk
 
   query-worker:
     <<: *worker-base
