@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     retrieval_top_k_initial: int = 20
     retrieval_top_k_final: int = 5
 
+    # Rerank (cross-encoder service — DNS interno do compose)
+    rerank_url: str = "http://rerank-service:8081"
+
 
 # Singleton: importe `settings` em qualquer módulo que precise de config.
 # Evita re-ler env a cada chamada e garante que todos os componentes vêem o mesmo.
