@@ -59,7 +59,7 @@ class RerankerClient:
                     )
 
                     resp.raise_for_status()
-                    
+
                     resp_json: list[dict[str, Any]] = resp.json()["items"]
 
                     return resp_json

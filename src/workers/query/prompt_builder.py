@@ -26,6 +26,7 @@ class ContextBlock:
     source: str
     page: int | None
     text: str
+    doc_id: str = ""
 
 
 def _load(name: str) -> str:
@@ -106,7 +107,10 @@ def build_prompt(
             budget_used += len(block.text)
         else:
             chars_that_can_be_used: ContextBlock = ContextBlock(
-                text=block.text[:remaining_budget], source=block.source, page=block.page
+                text=block.text[:remaining_budget],
+                source=block.source,
+                page=block.page,
+                doc_id=block.doc_id,
             )
             truncated_blocks.append(chars_that_can_be_used)
             break

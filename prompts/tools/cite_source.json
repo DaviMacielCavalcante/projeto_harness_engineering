@@ -1,0 +1,16 @@
+  {
+    "type": "function",
+    "function": {
+      "name": "cite_source",
+      "description": "Registra a fonte que fundamenta uma afirmação, chame-a uma vez por afirmação.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "doc_id": { "type": "string", "description": "Retire o valor do cabeçalho '[doc_id: ...] |' que aparece em cada bloco de contexto" },
+          "page": { "type": ["integer", "null"], "description": "A página, caso exista, da fonte que sustenta a afirmação." },
+          "snippet": { "type": "string", "description": "Texto copiado literalmente do documento (não uma paráfrase nem resumo)." }
+        },
+        "required": ["doc_id", "snippet"]
+      }
+    }
+  }

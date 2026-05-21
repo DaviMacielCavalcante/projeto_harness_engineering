@@ -59,3 +59,16 @@ def test_build_prompt_selects_system_prompt_by_lang(lang: str, expected_marker: 
     blocks = [ContextBlock(source="d.md", page=None, text="conteúdo qualquer")]
     prompt = build_prompt(question="pergunta", blocks=blocks, lang=lang)
     assert expected_marker in prompt
+
+
+def test_build_prompt_renders_doc_id_header() -> None:
+    blocks = [
+        ContextBlock(source="paper.pdf", page=51, text="conteúdo", doc_id="ap_es_v1"),
+    ]
+    prompt = build_prompt(question="?", blocks=blocks, lang="pt")
+
+    # O cabeçalho de cada bloco precisa expor o doc_id no formato [doc_id: ...]:
+    # é dele que o modelo copia o valor pra chamar cite_source (coerência
+    # ponta-a-ponta com prompts/tools/cite_source.json). Checa o início do
+    # cabeçalho (não o separador) pra não acoplar o teste ao layout exato.
+    assert "[doc_id: ap_es_v1" in prompt
