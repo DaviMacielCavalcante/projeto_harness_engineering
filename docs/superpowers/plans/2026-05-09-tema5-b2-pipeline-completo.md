@@ -1028,10 +1028,12 @@ Expected: 2 passed. → na implementação final, **6 passed** (suíte estendida
 
 ## Task 10: Integrar tudo no query-worker
 
+> ✅ **Concluída** (2026-05-21, code-partner) **no escopo cache/rerank/sessão/métricas**. `handle_query` reescrito em 7 fases (kwargs explícitos, não o `_Deps` do esboço). Smoke validou o caminho principal (rerank, 3 citações, 37s). **Divergências do esboço abaixo:** usa `qdrant.query_points`/`hits.points` (não `.search`), `publish_json` (não `_publish_reply` manual), recuperação de metadata por id após o rerank (o esboço lia `t.get("source")` dos itens reranqueados — que o rerank-service descarta; bug latente do plano). **Candura — NÃO entregue por esta task, apesar do título "function calling":** o `/api/chat`+`tools`+`tool_calls` **não foi cabeado** (nem aqui nem no esboço — ambos usam `generate` + citações estruturais). Citações vêm do lado "fallback textual" do híbrido (Task 8). Function calling segue pendência aberta no `TODO.md`. Hit do cache L2 e preâmbulo de sessão escritos/type-checked mas não exercitados pelo smoke atual (Task 11). Status e notas no `TODO.md`.
+
 **Files:**
 - Modify: `src/workers/query/main.py`
 
-- [ ] **Step 1: Reescrever para incluir cache, rerank, function calling, sessão**
+- [x] **Step 1: Reescrever para incluir cache, rerank, ~~function calling~~, sessão** *(function calling não-cabeado — ver nota no topo)*
 
 ```python
 import asyncio
@@ -1285,6 +1287,8 @@ Expected: smoke passa com latência maior (rerank + generation), e logs mostram 
 ---
 
 ## Task 11: Smoke estendido (validação do marco luz-verde do B2)
+
+> 🔶 **Parcial** (2026-05-21). Feito: **wait-for-ready** — `wait_for_ready()` no `smoke_test.py` faz poll no `/health` com retry em `httpx.TransportError` até deadline (`--health-timeout`, default 30s), liquidando o débito do §8.6 (reset-by-peer no boot). Isso não estava no esboço abaixo, mas é pré-requisito de tudo. **Pendente (Step 1):** as asserções B2 propriamente ditas — query repetida → hit L2 em <30% do tempo, `/metrics` com contadores não-zero, rerank `/health`. São elas que validam em runtime os ramos L2-hit/sessão da Task 10.
 
 **Files:**
 - Modify: `scripts/smoke_test.py`

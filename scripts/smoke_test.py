@@ -28,22 +28,55 @@ import httpx
 GATEWAY = "http://localhost:8000"
 
 
+def wait_for_ready(timeout_s: float = 30.0, interval_s: float = 1.0) -> bool:
+    """Faz poll no /health do gateway até responder ok ou estourar o prazo.
+
+    O ``make dev`` retorna quando os containers estão ``Started``, mas o gateway
+    ainda roda o ``lifespan`` (conecta RabbitMQ + declara filas) antes de servir.
+    Bater no /health nesse intervalo dá ``Connection reset by peer`` (TCP aceito
+    pelo proxy do Docker, app interno ainda não de pé) ou ``Connection refused``
+    — ambos ``httpx.TransportError``. Por isso o poll com retry em vez de um GET
+    único (débito técnico do §8.6, fica mais crítico no Modo 2 com Tailscale).
+
+    Returns
+    -------
+    bool
+        True se o gateway respondeu ``{"status": "ok"}`` dentro do prazo.
+    """
+    deadline = time.perf_counter() + timeout_s
+    while time.perf_counter() < deadline:
+        try:
+            resp = httpx.get(url=f"{GATEWAY}/health", timeout=5)
+            if resp.status_code == 200 and resp.json() == {"status": "ok"}:
+                return True
+        except httpx.TransportError:
+            pass  # gateway ainda subindo; tenta de novo até o deadline
+        time.sleep(interval_s)
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", default="samples/ap_es_v1.pdf")
     parser.add_argument("--question", default="Sobre o que fala este documento?")
     parser.add_argument("--wait", type=float, default=30.0, help="segundos para indexação")
+    parser.add_argument(
+        "--health-timeout",
+        type=float,
+        default=30.0,
+        help="segundos de espera pelo gateway ficar pronto (wait-for-ready)",
+    )
     args = parser.parse_args()
 
     if not Path(args.file).exists():
         print("PDF inexistente.", file=sys.stderr)
         return 2
 
-    resp = httpx.get(url=f"{GATEWAY}/health", timeout=5)
+    print(f"[smoke] aguardando gateway ficar pronto (até {args.health_timeout}s)")
 
-    resp.raise_for_status()
-
-    assert resp.json() == {"status": "ok"}
+    if not wait_for_ready(timeout_s=args.health_timeout):
+        print("[smoke] FALHA: gateway não respondeu /health a tempo.", file=sys.stderr)
+        return 2
 
     print("[smoke] health OK")
 
