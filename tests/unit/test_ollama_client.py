@@ -121,3 +121,88 @@ async def test_embed_retries_on_500_then_succeeds() -> None:
     vec = await client.embed("x", model="nomic-embed-text")
 
     assert vec == [0.42]
+
+
+# ---------------------------------------------------------------------------
+# chat — function calling: content + tool_calls
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_chat_returns_content_and_tool_calls() -> None:
+    """A API /api/chat aninha tudo em 'message': content + tool_calls (lista).
+
+    O client expõe 'text'/'tokens_in'/'tokens_out' (mesma abstração do
+    generate) + 'tool_calls' — a lista crua de chamadas que o query-worker
+    converte em Citations.
+    """
+    route = respx.post("http://ollama:11434/api/chat").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "message": {
+                    "role": "assistant",
+                    "content": "A EAP estrutura o escopo.",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "cite_source",
+                                "arguments": {
+                                    "doc_id": "doc42",
+                                    "page": 5,
+                                    "snippet": "trecho literal",
+                                },
+                            }
+                        }
+                    ],
+                },
+                "prompt_eval_count": 80,
+                "eval_count": 20,
+            },
+        )
+    )
+
+    client = OllamaClient(base_url="http://ollama:11434")
+    out = await client.chat(
+        messages=[{"role": "user", "content": "O que é EAP?"}],
+        model="qwen2.5:7b-instruct",
+        tools=[{"type": "function", "function": {"name": "cite_source"}}],
+    )
+
+    assert out["text"] == "A EAP estrutura o escopo."
+    assert out["tokens_in"] == 80
+    assert out["tokens_out"] == 20
+    assert out["tool_calls"][0]["function"]["arguments"]["doc_id"] == "doc42"
+    assert route.called
+
+    # messages e tools precisam ir no body
+    sent = route.calls.last.request.read()
+    assert b"cite_source" in sent
+    assert b"O que" in sent
+
+
+@respx.mock
+async def test_chat_without_tool_calls_returns_empty_list() -> None:
+    """Modelo que não chama a tool: 'tool_calls' vem ausente → client devolve [].
+
+    É o sinal que o worker usa pra cair no caminho estrutural (fallback do híbrido).
+    """
+    respx.post("http://ollama:11434/api/chat").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "message": {"role": "assistant", "content": "resposta sem citações"},
+                "prompt_eval_count": 10,
+                "eval_count": 5,
+            },
+        )
+    )
+
+    client = OllamaClient(base_url="http://ollama:11434")
+    out = await client.chat(
+        messages=[{"role": "user", "content": "?"}],
+        model="qwen2.5:7b-instruct",
+    )
+
+    assert out["text"] == "resposta sem citações"
+    assert out["tool_calls"] == []

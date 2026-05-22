@@ -1,6 +1,6 @@
 import pytest
 
-from src.workers.query.prompt_builder import ContextBlock, build_prompt
+from src.workers.query.prompt_builder import ContextBlock, build_messages, build_prompt
 
 # Marcadores estáveis dos system prompts versionados (prompts/system_qa_*.md).
 # Se o conteúdo dos prompts mudar, ajuste só estas constantes.
@@ -59,6 +59,35 @@ def test_build_prompt_selects_system_prompt_by_lang(lang: str, expected_marker: 
     blocks = [ContextBlock(source="d.md", page=None, text="conteúdo qualquer")]
     prompt = build_prompt(question="pergunta", blocks=blocks, lang=lang)
     assert expected_marker in prompt
+
+
+def test_build_messages_returns_system_then_user() -> None:
+    blocks = [ContextBlock(source="paper.pdf", page=2, text="conteúdo", doc_id="ap")]
+    messages = build_messages(question="pergunta", blocks=blocks, lang="pt")
+
+    # /api/chat espera uma lista de mensagens com role; a política precisa estar
+    # isolada num system message próprio (é a hipótese da alavanca 2), e a
+    # pergunta+contexto no user. Ordem importa: system primeiro.
+    assert [m["role"] for m in messages] == ["system", "user"]
+    assert _PT_MARKER in messages[0]["content"]
+    assert "pergunta" in messages[1]["content"]
+    assert "[doc_id: ap" in messages[1]["content"]
+
+
+def test_build_messages_equivalent_to_build_prompt() -> None:
+    blocks = [
+        ContextBlock(source="paper.pdf", page=2, text="Arquitetura hexagonal.", doc_id="ap"),
+        ContextBlock(source="livro.md", page=None, text="Camadas de adaptadores.", doc_id="lv"),
+    ]
+    question = "O que é arquitetura hexagonal?"
+
+    prompt = build_prompt(question=question, blocks=blocks, lang="pt")
+    messages = build_messages(question=question, blocks=blocks, lang="pt")
+
+    # Invariante do extract-method: as duas saídas vêm do mesmo _render, então
+    # colar as mensagens reproduz exatamente o prompt monolítico. Se alguém
+    # quebrar um dos lados (ex: truncar diferente), este teste pega.
+    assert prompt == messages[0]["content"] + "\n\n" + messages[1]["content"]
 
 
 def test_build_prompt_renders_doc_id_header() -> None:

@@ -13,8 +13,10 @@ rerank-service). A validação é o smoke estendido (Task 11).
 """
 
 import asyncio
+import json
 import socket
 import time
+from pathlib import Path
 from typing import Any
 
 import redis.asyncio as aredis
@@ -42,11 +44,24 @@ from src.shared.metrics import (
 from src.shared.ollama_client import OllamaClient
 from src.shared.schemas import Citation, QueryRequestMessage, QueryResponse
 from src.shared.session import SessionStore
-from src.workers.query.prompt_builder import ContextBlock, build_prompt
+from src.workers.query.prompt_builder import ContextBlock, build_messages
 from src.workers.query.reranker_client import RerankerClient
 
 log = configure_logging("query-worker")
 HOSTNAME = socket.gethostname()
+
+# src/workers/query/main.py -> parents[3] == raiz do repo (mesmo cálculo do prompt_builder)
+_TOOLS_DIR = Path(__file__).resolve().parents[3] / "prompts" / "tools"
+
+
+def load_cite_source_tool() -> dict[str, Any]:
+    """Carrega a definição da tool ``cite_source`` de ``prompts/tools/``.
+
+    Chamado uma vez no bootstrap (``main``) e passado ao handler — não é estado
+    de módulo no import time (convenção do projeto).
+    """
+    tool: dict[str, Any] = json.loads((_TOOLS_DIR / "cite_source.json").read_text(encoding="utf-8"))
+    return tool
 
 
 async def handle_query(
@@ -57,6 +72,7 @@ async def handle_query(
     cache: Cache,
     reranker: RerankerClient,
     sessions: SessionStore,
+    cite_tool: dict[str, Any],
 ) -> None:
     """Pipeline de query do B2: embed(L1) → retrieve → rerank → L2 → generate.
 
@@ -76,6 +92,9 @@ async def handle_query(
         Cliente do rerank-service (top-N → top-k via cross-encoder).
     sessions : SessionStore
         Histórico/resumo de conversa, usado só quando há ``session_id``.
+    cite_tool : dict
+        Definição da tool ``cite_source`` (function calling), passada ao
+        ``ollama.chat`` em ``tools=[cite_tool]``.
 
     Notes
     -----
@@ -104,8 +123,6 @@ async def handle_query(
         # valor, no miss calcula e grava. NÃO inverta a polaridade (o hit é
         # quando get devolve algo != None).
         with query_pipeline_duration.labels(phase="embed", worker_id=HOSTNAME).time():
-            # TODO 1: vector = await cache.get_query_embedding(msg.question)
-
             vector = await cache.get_query_embedding(msg.question)
 
             if vector is not None:
@@ -158,14 +175,6 @@ async def handle_query(
         # ------------------------------------------------------------------
         # FASE 3 — Rerank top-N → top-k (com fallback se o serviço cair)
         # ------------------------------------------------------------------
-        # ARMADILHA: o rerank-service devolve só {id, score, text} — perde
-        # doc_id/source/page. Monte um índice {id: payload_completo} ANTES de
-        # reranquear e recupere a metadata por id depois, senão as citações
-        # apontam pra nada (bug silencioso).
-        #
-        # blocks: list[ContextBlock] e retrieved_ids: list[str] são o que as
-        # fases seguintes consomem — os dois caminhos (rerank ok / fallback)
-        # têm que produzir ambos.
         with query_pipeline_duration.labels(phase="rerank", worker_id=HOSTNAME).time():
             try:
                 candidates = []
@@ -251,44 +260,48 @@ async def handle_query(
             cache_misses.labels(cache_layer="L2").inc()
 
         # ------------------------------------------------------------------
-        # FASE 5 — Monta o prompt; se houver sessão, prefixa histórico/resumo
+        # FASE 5 — Monta as mensagens (system+user); se houver sessão, prefixa
+        #          histórico/resumo ao conteúdo do user (mantém o system isolado)
         # ------------------------------------------------------------------
-        prompt = build_prompt(question=msg.question, blocks=blocks, lang=lang)
+        messages: list[dict[str, Any]] = build_messages(
+            question=msg.question, blocks=blocks, lang=lang
+        )
         if msg.session_id:
             history = await sessions.get_history(msg.session_id)
             summary = await sessions.get_summary(msg.session_id)
 
             history_in_one_line = "\n".join(f"Q: {t['q']}\nA: {t['a']}" for t in history)
 
-            if summary and not history:
-                prompt = f"# Resumo: \n{summary}" + prompt
+            base_message = messages[1]["content"]
 
-            if history and summary is None:
-                prompt = "# Histórico recente\n" + "\n" + history_in_one_line + "\n" + prompt
+            pieces: list[str] = []
 
-            if history and summary:
-                prompt = (
-                    f"# Resumo: \n{summary}"
-                    + "# Histórico recente\n"
-                    + history_in_one_line
-                    + "\n"
-                    + prompt
-                )
+            if summary:
+                pieces.append(f"# Resumo: \n{summary}")
 
+            if history:
+                pieces.append("# Histórico recente\n" + "\n" + history_in_one_line)
+
+            if pieces:
+                messages[1]["content"] = "\n\n".join(pieces) + "\n\n" + base_message
         # ------------------------------------------------------------------
-        # FASE 6 — Geração no Ollama (preserva o shape do B1, agora instrumentado)
+        # FASE 6 — Geração no Ollama via /api/chat (com a tool cite_source)
         # ------------------------------------------------------------------
+        # Troca de generate→chat: agora passamos a tool e o modelo PODE emitir
+        # tool_calls (citações estruturadas). O `generated` ganha "tool_calls".
         with query_pipeline_duration.labels(phase="generate", worker_id=HOSTNAME).time():
             ollama_inflight.inc()
             try:
-                generated = await ollama.generate(
+                generated = await ollama.chat(
+                    messages=messages,
                     model=settings.generation_model,
-                    prompt=prompt,
+                    tools=[cite_tool],
                     options={
                         "temperature": settings.generation_temperature,
                         "num_ctx": settings.generation_num_ctx,
                     },
                 )
+
             finally:
                 ollama_inflight.dec()
 
@@ -306,15 +319,43 @@ async def handle_query(
 
         citations: list[Citation] = []
 
-        for index, block in enumerate(blocks):
-            c = Citation(
-                doc_id=block.doc_id,
-                chunk_id=retrieved_ids[index],
-                page=block.page,
-                snippet=block.text[:240],
-                source=block.source,
-            )
-            citations.append(c)
+        if generated["tool_calls"]:
+            source_by_doc_id_and_page = {}
+
+            for i, block in enumerate(blocks):
+                source_by_doc_id_and_page[(block.doc_id, block.page)] = (
+                    retrieved_ids[i],
+                    block.source,
+                )
+
+            for tc in generated["tool_calls"]:
+                args = tc["function"]["arguments"]
+                chunk_id, source = source_by_doc_id_and_page.get(
+                    (args["doc_id"], args.get("page")), ("", args["doc_id"])
+                )
+
+                c = Citation(
+                    doc_id=args["doc_id"],
+                    chunk_id=chunk_id,
+                    page=args.get("page"),
+                    snippet=args["snippet"],
+                    source=source,
+                )
+
+                citations.append(c)
+            log.info("query.citations", via="tool_calls", n=len(generated["tool_calls"]))
+
+        else:
+            for index, block in enumerate(blocks):
+                c = Citation(
+                    doc_id=block.doc_id,
+                    chunk_id=retrieved_ids[index],
+                    page=block.page,
+                    snippet=block.text[:240],
+                    source=block.source,
+                )
+                citations.append(c)
+            log.info("query.citations", via="structural", n=len(blocks))
 
         response = QueryResponse(
             answer=generated["text"],
@@ -368,6 +409,7 @@ async def main() -> None:
     redis_client: Any = aredis.from_url(settings.redis_url, decode_responses=True)
     cache = Cache(client=redis_client)
     sessions = SessionStore(client=redis_client)
+    cite_tool = load_cite_source_tool()
 
     log.info("query-worker.ready", queue=settings.queue_query_requests)
 
@@ -382,6 +424,7 @@ async def main() -> None:
                 cache=cache,
                 reranker=reranker_client,
                 sessions=sessions,
+                cite_tool=cite_tool,
             )
 
         await consume_forever(

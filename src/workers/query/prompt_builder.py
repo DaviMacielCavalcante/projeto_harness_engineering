@@ -58,33 +58,14 @@ def _load(name: str) -> str:
         return prompt
 
 
-def build_prompt(
-    question: str,
-    blocks: list[ContextBlock],
-    lang: str,
-    max_chars: int = 24_000,
-) -> str:
-    """Monta o prompt completo (system + user) com orçamento de caracteres.
+def _render(
+    question: str, blocks: list[ContextBlock], lang: str, max_chars: int = 24_000
+) -> tuple[str, str]:
+    """Carrega o system e renderiza+trunca o user; devolve ``(system, user)``.
 
-    Parameters
-    ----------
-    question : str
-        Pergunta do usuário.
-    blocks : list of ContextBlock
-        Chunks recuperados, na ordem de relevância do retrieval (mais
-        relevante primeiro).
-    lang : str
-        Idioma detectado da pergunta. Só ``"pt"`` e ``"en"`` têm system
-        prompt próprio; qualquer outro cai no ``pt``.
-    max_chars : int, default 24_000
-        Orçamento total aproximado de caracteres. Se os blocos estourarem,
-        trunca pela cauda preservando os primeiros.
-
-    Returns
-    -------
-    str
-        Prompt final: o ``system``, uma linha em branco e o ``user``,
-        nessa ordem (system + duas quebras de linha + user).
+    Miolo compartilhado por :func:`build_prompt` (que cola o par) e
+    :func:`build_messages` (que devolve as duas metades como mensagens
+    separadas). Não cola nada — a colagem é decisão de quem chama.
     """
     policy_prompt = f"system_qa_{lang}.md" if lang in ("en", "pt") else "system_qa_pt.md"
 
@@ -117,6 +98,63 @@ def build_prompt(
 
     user = user_template.render(question=question, context_blocks=truncated_blocks)
 
+    return (system, user)
+
+
+def build_prompt(
+    question: str,
+    blocks: list[ContextBlock],
+    lang: str,
+    max_chars: int = 24_000,
+) -> str:
+    """Monta o prompt completo (system + user) com orçamento de caracteres.
+
+    Parameters
+    ----------
+    question : str
+        Pergunta do usuário.
+    blocks : list of ContextBlock
+        Chunks recuperados, na ordem de relevância do retrieval (mais
+        relevante primeiro).
+    lang : str
+        Idioma detectado da pergunta. Só ``"pt"`` e ``"en"`` têm system
+        prompt próprio; qualquer outro cai no ``pt``.
+    max_chars : int, default 24_000
+        Orçamento total aproximado de caracteres. Se os blocos estourarem,
+        trunca pela cauda preservando os primeiros.
+
+    Returns
+    -------
+    str
+        Prompt final: o ``system``, uma linha em branco e o ``user``,
+        nessa ordem (system + duas quebras de linha + user).
+    """
+    system, user = _render(question, blocks, lang, max_chars)
+
     user_prompt = system + "\n\n" + user
 
     return user_prompt
+
+
+def build_messages(
+    question: str,
+    blocks: list[ContextBlock],
+    lang: str,
+    max_chars: int = 24_000,
+) -> list[dict[str, str]]:
+    """Como :func:`build_prompt`, mas devolve mensagens SEPARADAS para /api/chat.
+
+    Lever 2 do function calling (B2): hoje o worker manda system+contexto+pergunta
+    num único ``user`` message, com a ordem de chamar ``cite_source`` enterrada no
+    topo de um blocão de contexto. A hipótese é que o 7B atende melhor à instrução
+    de tool quando ela está isolada num ``system`` message próprio. Esta função
+    monta exatamente isso: ``system`` (a política) + ``user`` (contexto + pergunta).
+
+    Returns
+    -------
+    list of dict
+        ``[{"role": "system", "content": <system>}, {"role": "user", "content": <user>}]``.
+    """
+    system, user = _render(question, blocks, lang, max_chars)
+
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]

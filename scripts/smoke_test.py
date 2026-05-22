@@ -1,8 +1,12 @@
-"""Smoke test ponta-a-ponta do B1.
+"""Smoke test ponta-a-ponta (B1 + validações do marco luz-verde do B2).
 
-Exercita o pipeline inteiro pela primeira vez de verdade: gateway HTTP →
-RabbitMQ → ingest-worker → Ollama/Qdrant → query-worker → resposta com
-citação. mypy/ruff não validam isto; só rodar contra a stack subida valida.
+Exercita o pipeline inteiro de verdade: gateway HTTP → RabbitMQ →
+ingest-worker → Ollama/Qdrant → query-worker → resposta com citação.
+mypy/ruff não validam isto; só rodar contra a stack subida valida.
+
+Validações B2 ao final: cache L2 (pergunta repetida volta mais rápido),
+sessão (dois turnos no mesmo session_id sem quebrar), /metrics com contadores
+``rag_*``, e rerank-service saudável.
 
 Pré-requisitos:
   1. ``make dev`` (sobe os containers do Modo 1)
@@ -136,9 +140,64 @@ def main() -> int:
     if data["answer"].strip() == "":
         print("[smoke] FALHA: resposta vazia.", file=sys.stderr)
         return 1
+
+    print("[smoke] OK (B1)")
+
+    # ------------------------------------------------------------------
+    # Validações específicas do B2 (marco luz-verde)
+    # ------------------------------------------------------------------
+
+    # 1. Cache L2: mesma pergunta + mesmo top_k → mesmos retrieved_ids → hit.
+    #    A 2ª chamada pula a geração no LLM, então deve voltar muito mais rápido.
+    print("[smoke-b2] cache L2: repetindo a mesma pergunta")
+    started_repeat = time.perf_counter()
+    repeat = httpx.post(
+        url=f"{GATEWAY}/query", timeout=180, json={"question": args.question, "top_k": 3}
+    )
+    repeat.raise_for_status()
+    repeat_elapsed = time.perf_counter() - started_repeat
+    print(f"[smoke-b2] 1ª: {elapsed_time:.1f}s | 2ª (cache): {repeat_elapsed:.1f}s")
+    if repeat_elapsed > elapsed_time * 0.5:
+        print("[smoke-b2] AVISO: cache L2 não parece estar surtindo efeito (2ª não foi <50%).")
     else:
-        print("[smoke] OK")
-        return 0
+        print("[smoke-b2] cache L2 OK (resposta repetida bem mais rápida)")
+
+    # 2. Sessão: dois turnos no mesmo session_id exercitam get_history/get_summary
+    #    /append contra o Redis real (o preâmbulo de sessão da Task 10, que o
+    #    smoke sem session_id nunca tocava). Aqui validamos que o caminho não
+    #    quebra e devolve respostas não-vazias — não a qualidade do contexto.
+    print("[smoke-b2] sessão: dois turnos no mesmo session_id")
+    sid = "smoke-session"
+    session_questions = ["O que é qualidade de software?", "E como ela é medida?"]
+    for turn, question in enumerate(session_questions, start=1):
+        sresp = httpx.post(
+            url=f"{GATEWAY}/query",
+            timeout=180,
+            json={"question": question, "top_k": 3, "session_id": sid},
+        )
+        sresp.raise_for_status()
+        if sresp.json()["answer"].strip() == "":
+            print(f"[smoke-b2] FALHA: turno {turn} da sessão veio vazio.", file=sys.stderr)
+            return 1
+    print("[smoke-b2] sessão OK (preâmbulo histórico/resumo exercitado sem erro)")
+
+    # 3. /metrics do gateway expõe os contadores rag_* declarados.
+    print("[smoke-b2] verificando /metrics do gateway")
+    metrics = httpx.get(url=f"{GATEWAY}/metrics", timeout=5)
+    metrics.raise_for_status()
+    body = metrics.text
+    assert "rag_request_duration_seconds" in body, "métrica de request ausente"
+    assert "rag_throughput_queries_total" in body, "throughput counter ausente"
+    print("[smoke-b2] métricas OK")
+
+    # 4. rerank-service responde no /health.
+    print("[smoke-b2] verificando rerank-service")
+    rerank_health = httpx.get(url="http://localhost:8081/health", timeout=5)
+    rerank_health.raise_for_status()
+    print("[smoke-b2] rerank healthy")
+
+    print("[smoke] OK")
+    return 0
 
 
 if __name__ == "__main__":

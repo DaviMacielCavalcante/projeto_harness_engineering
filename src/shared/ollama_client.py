@@ -109,3 +109,57 @@ class OllamaClient:
         }
 
         return mapped_response
+
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        model: str,
+        tools: list[dict[str, Any]] | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Gera resposta via ``/api/chat``, com suporte a function calling.
+
+        Diferente de :meth:`generate` (``/api/generate``, prompt único), o
+        ``/api/chat`` recebe uma lista de ``messages`` e, opcionalmente,
+        ``tools`` — e pode devolver ``tool_calls`` (pedidos estruturados de
+        chamada de função) junto com/no lugar do texto. O query-worker converte
+        esses ``tool_calls`` em :class:`Citation`.
+
+        Parameters
+        ----------
+        messages : list of dict
+            Mensagens no formato Ollama (ex: ``[{"role": "user", "content": ...}]``).
+        model : str
+            Nome do modelo (ex: ``"qwen2.5:7b-instruct"``).
+        tools : list of dict, optional
+            Definições de ferramentas (ex: ``[cite_source]``). Só vai no payload
+            se não-``None``.
+        options : dict, optional
+            Opções de inferência (temperature, num_ctx, etc.).
+
+        Returns
+        -------
+        dict
+            ``"text"`` (``message.content``), ``"tokens_in"``, ``"tokens_out"``
+            e ``"tool_calls"`` (lista crua; ``[]`` se o modelo não chamou tool).
+        """
+        payload = {"model": model, "messages": messages, "stream": False}
+
+        if tools:
+            payload["tools"] = tools
+
+        if options:
+            payload["options"] = options
+
+        response = await self._post_with_retry(path="/api/chat", json=payload)
+
+        msg = response["message"]
+
+        tool_calls = msg.get("tool_calls", [])
+
+        return {
+            "text": msg["content"],
+            "tokens_in": response.get("prompt_eval_count", 0),
+            "tokens_out": response.get("eval_count", 0),
+            "tool_calls": tool_calls,
+        }

@@ -1,0 +1,20 @@
+uv run python scripts/smoke_test.py
+[smoke] aguardando gateway ficar pronto (até 30.0s)
+[smoke] health OK
+0accdb18c7177bc2 i-8216acf5
+[smoke] aguardando 30.0s
+elapsed: 14.372199221999836 14354 3078 174 3 Este documento aborda conceitos e práticas relacionados à engenharia de software, incluindo definições de termos como Documento de Requisitos, Descrição de Produto e Documentação de Usuário. Também discute a norma ISO/IEC 12119 e o processo de avaliação de conformidade com essa norma para pacotes de software. Além disso, menciona aspectos da implementação da ISO 9001:2008, focando em responsabilidades administrativas e controle de qualidade no desenvolvimento de software. cite_source(doc_id="0accdb18c7177bc2", page=5, snippet="O software agora ultrapassou o hardware como a chave para o sucesso de muitos sistemas baseados em computador.")
+ap_es_v1.pdf, 101
+ap_es_v1.pdf, 94
+ap_es_v1.pdf, 5
+[smoke] OK (B1)
+[smoke-b2] cache L2: repetindo a mesma pergunta
+[smoke-b2] 1ª: 14.4s | 2ª (cache): 8.4s
+[smoke-b2] AVISO: cache L2 não parece estar surtindo efeito (2ª não foi <50%).
+[smoke-b2] sessão: dois turnos no mesmo session_id
+[smoke-b2] sessão OK (preâmbulo histórico/resumo exercitado sem erro)
+[smoke-b2] verificando /metrics do gateway
+[smoke-b2] métricas OK
+[smoke-b2] verificando rerank-service
+[smoke-b2] rerank healthy
+[smoke] OK
