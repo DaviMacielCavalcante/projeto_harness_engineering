@@ -70,7 +70,7 @@ projeto_harness_engineering/
 - Modify: `src/shared/messaging.py`
 - Create: `tests/integration/test_dlq.py`
 
-- [ ] **Step 1: Reescrever `declare_queues` para criar DLX + filas com `x-dead-letter-exchange`**
+- [x] **Step 1: Reescrever `declare_queues` para criar DLX + filas com `x-dead-letter-exchange`** ✓ 2026-05-22: `declare_topology(conn, *bases)` substituiu `declare_queues`. DLX `rag.dlx` (DIRECT, durable), e por base: DLQ `f"{base}.dlq"` (durable) bindada com `routing_key=base` + fila principal com `arguments={"x-dead-letter-exchange": "rag.dlx", "x-dead-letter-routing-key": base}`. Em `gateway/main.py`, lifespan passou a chamar `declare_topology(conn, settings.queue_ingest_documents, settings.queue_ingest_chunks, settings.queue_query_requests)`. Code-partner.
 
 Em `src/shared/messaging.py`, substitua a função `declare_queues` por:
 
@@ -119,7 +119,7 @@ E onde quer que `declare_queues` era chamado (gateway main.py), substitua por `d
 > # ou: make down -v && make dev (mais limpo)
 > ```
 
-- [ ] **Step 2: Atualizar `consume_forever` para nack-sem-requeue depois de N tentativas**
+- [x] **Step 2: Atualizar `consume_forever` para nack-sem-requeue depois de N tentativas** ✓ 2026-05-22: ack/nack agora manual (saiu o `async with msg.process()`). Contador de tentativas vive no header `x-attempts` da mensagem; cada iteração calcula `attempts = 1 + cast(int, (msg.headers or {}).get("x-attempts", 0))`. No except: `attempts >= max_attempts` → `reject(requeue=False)` (cai na DLX via arguments → DLQ); senão republica cópia na mesma fila com `dict(msg.headers or {})` + `x-attempts` incrementado, e ack do original. **Divergência mínima do plano:** usei `cast(int, ...)` em vez de `int(...)` na leitura do header — o union de `FieldValue` (bytes/Decimal/FieldArray/datetime/None/...) inclui tipos não-conversíveis pra `int`, mypy rejeita `int(...)`; `cast` é promessa pura, consistente com a convenção do projeto (`RerankerClient`, §8.7 do relatório). Code-partner.
 
 Substituir o bloco `async with msg.process(requeue=False)` por uma estratégia explícita:
 
@@ -163,7 +163,7 @@ async def consume_forever(
                     await msg.ack()  # ack do original; o requeue foi via republish manual
 ```
 
-- [ ] **Step 3: Teste de integração da DLQ**
+- [x] **Step 3: Teste de integração da DLQ** ✓ 2026-05-22 (IA implementou — teste é contrato executável, fronteira code-partner §2.5 do `USO_DE_IA.md`). `tests/integration/test_dlq.py`: `test_message_lands_in_dlq_after_max_attempts` declara topologia com nomes únicos (`test.b3.dlx`/`test.b3.dlq.queue`/`...dlq` — isolam de filas reais em broker compartilhado), handler `always_fails` registrando cada entrega numa lista, consumer em `asyncio.create_task`, publish, polling com teto ~15s, cancel limpo (`cancel()` + `await task` + `except CancelledError`), assert `len(attempts_seen) == 3` + `dlq.declaration_result.message_count >= 1` (com `passive=True`). **Divergências do template do plano:** (a) tipagem strict adicionada (`list[int]`, `AbstractIncomingMessage`, `dict[str, Any]`); (b) `await consumer_task` após `cancel()` pra evitar warning de "task was destroyed but it is pending" no teardown do pytest-asyncio; (c) mensagens `f"..."` nos asserts pra diagnóstico de timing flaky. **Validação:** `RUN_INTEGRATION=1 uv run pytest tests/integration/test_dlq.py -v` → 1 passed em 0.59s; `make smoke` verde sem regressão (B1 + B2 todos os asserts: 41.99s/8.7s/3 citações).
 
 `tests/integration/test_dlq.py`:
 

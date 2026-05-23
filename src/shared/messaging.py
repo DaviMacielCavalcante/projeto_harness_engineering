@@ -9,7 +9,7 @@ porque `aio-pika` exige broker real.
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 import aio_pika
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
@@ -40,21 +40,46 @@ async def connect(url: str) -> AsyncIterator[AbstractRobustConnection]:
         await conn.close()
 
 
-async def declare_queues(conn: AbstractRobustConnection, *names: str) -> None:
-    """Declara filas durable no broker. DLX e binds explícitos vêm em B3.
+async def declare_topology(conn: AbstractRobustConnection, *bases: str) -> None:
+    """Declara a topologia completa: DLX + filas principais (com dead-letter) + DLQs.
+
+    Substitui o ``declare_queues`` do B1/B2. Cada fila principal ganha os
+    argumentos ``x-dead-letter-exchange``/``x-dead-letter-routing-key`` apontando
+    pra ``rag.dlx``; uma mensagem rejeitada sem requeue (``consume_forever`` após
+    ``max_attempts``) é "dead-lettered" pra DLX, que a roteia pra ``<base>.dlq``.
 
     Parameters
     ----------
     conn : AbstractRobustConnection
         Conexão já aberta (use junto com :func:`connect`).
-    *names : str
-        Nomes das filas a declarar. Idempotente — se já existir, no-op.
+    *bases : str
+        Nomes das filas principais (o caller passa de ``settings.queue_*`` —
+        fonte única). Cada uma ganha uma ``<base>.dlq`` correspondente.
+
+    Notes
+    -----
+    Filas criadas no B1/B2 **sem** esses argumentos precisam ser apagadas e
+    recriadas — o RabbitMQ recusa redeclaração com argumentos diferentes
+    (``PRECONDITION_FAILED``). Mais limpo: ``make down -v && make dev``.
     """
     channel = await conn.channel()
-
     try:
-        for name in names:
-            await channel.declare_queue(name=name, durable=True)
+        rag_dlx = await channel.declare_exchange(
+            name="rag.dlx", type=aio_pika.ExchangeType.DIRECT, durable=True
+        )
+
+        for base in bases:
+            dlq_name = f"{base}.dlq"
+
+            dlq_queue = await channel.declare_queue(name=dlq_name, durable=True)
+
+            await dlq_queue.bind(rag_dlx, routing_key=base)
+
+            await channel.declare_queue(
+                name=base,
+                durable=True,
+                arguments={"x-dead-letter-exchange": "rag.dlx", "x-dead-letter-routing-key": base},
+            )
     finally:
         await channel.close()
 
@@ -104,36 +129,60 @@ async def consume_forever(
     queue_name: str,
     handler: Handler,
     prefetch: int = 1,
+    max_attempts: int = 3,
 ) -> None:
-    """Consome a fila indefinidamente, chamando `handler` para cada mensagem.
+    """Consome a fila indefinidamente com retry contado e DLQ após N falhas.
 
-    O ack é automático ao sair do bloco ``async with msg.process(...)`` sem
-    exceção; em caso de exceção, a msg é rejeitada (vai para DLQ quando DLX
-    estiver configurada em B3).
+    Ack/nack agora é **manual** (não mais ``async with msg.process()``), porque
+    precisamos decidir, a cada falha, entre *retentar* (republicar com contador
+    incrementado) e *desistir* (``reject(requeue=False)`` → cai na DLX → DLQ).
 
     Parameters
     ----------
     conn : AbstractRobustConnection
         Conexão já aberta.
     queue_name : str
-        Nome da fila a consumir.
+        Nome da fila a consumir (já declarada por :func:`declare_topology`).
     handler : Handler
         Função async ``(msg, payload_dict) -> None`` chamada para cada msg.
     prefetch : int, default 1
-        Quantas mensagens podem estar em voo simultaneamente neste consumer
-        (QoS). 1 = processa uma de cada vez, garante fairness entre workers.
+        QoS — quantas mensagens em voo simultâneas neste consumer.
+    max_attempts : int, default 3
+        Após esta tentativa falhar, a mensagem vai pra DLQ em vez de retentar.
     """
     channel = await conn.channel()
-
     try:
         await channel.set_qos(prefetch_count=prefetch)
 
-        queue = await channel.declare_queue(name=queue_name, durable=True)
+        queue = await channel.declare_queue(name=queue_name, passive=True)
 
         async with queue.iterator() as it:
             async for msg in it:
-                async with msg.process(requeue=False):
+                attempts = 1 + cast(int, (msg.headers or {}).get("x-attempts", 0))
+
+                try:
                     payload = json.loads(msg.body)
                     await handler(msg, payload)
+                    await msg.ack()
+                except Exception:
+                    if attempts >= max_attempts:
+                        await msg.reject(requeue=False)
+                    else:
+                        headers = dict(msg.headers or {})
+
+                        headers["x-attempts"] = attempts
+
+                        await channel.default_exchange.publish(
+                            aio_pika.Message(
+                                body=msg.body,
+                                headers=headers,
+                                correlation_id=msg.correlation_id,
+                                reply_to=msg.reply_to,
+                                content_type=msg.content_type,
+                            ),
+                            routing_key=queue_name,
+                        )
+
+                        await msg.ack()
     finally:
         await channel.close()

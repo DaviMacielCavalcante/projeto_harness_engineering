@@ -19,7 +19,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from src.gateway.routes import router
 from src.shared.config import settings
 from src.shared.logging import configure_logging
-from src.shared.messaging import connect, declare_queues
+from src.shared.messaging import connect, declare_topology
 from src.shared.metrics import request_duration
 
 log = configure_logging("gateway")
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("gateway.starting", rabbitmq=settings.rabbitmq_url)
 
     async with connect(settings.rabbitmq_url) as conn:
-        await declare_queues(
+        await declare_topology(
             conn,
             settings.queue_ingest_documents,
             settings.queue_ingest_chunks,
