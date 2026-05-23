@@ -1,0 +1,29 @@
+# Copia este ficheiro para inventory.yml e preenche com os valores reais.
+#
+# Como obter os IPs Tailscale de cada PC:
+#   Em cada PC (Linux): tailscale ip -4
+#   Em cada PC (Windows): tailscale ip
+#
+# O ansible_user deve ser o utilizador Linux com acesso sudo em cada PC.
+# Por convenção neste projeto usamos "rag" — ajusta se o teu user for diferente.
+#
+# Os IPs Tailscale são privados (100.64.0.0/10) e só acessíveis dentro da rede
+# Tailscale, mas mesmo assim não commites o ficheiro com IPs reais.
+
+all:
+  vars:
+    ansible_user: rag
+    ansible_python_interpreter: /usr/bin/python3
+  hosts:
+    pc1:
+      ansible_host: 100.FILL.ME.PC1   # IP Tailscale do PC1 (servidor, com GPU)
+      host_role: server
+      gpu_enabled: true
+    pc2:
+      ansible_host: 100.FILL.ME.PC2   # IP Tailscale do PC2 (worker)
+      host_role: worker
+      gpu_enabled: false
+    pc3:
+      ansible_host: 100.FILL.ME.PC3   # IP Tailscale do PC3 (worker)
+      host_role: worker
+      gpu_enabled: false

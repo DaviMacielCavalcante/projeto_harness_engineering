@@ -1,0 +1,37 @@
+---
+- name: Deploy do RAG nos 3 PCs
+  hosts: all
+  become: false
+  tasks:
+    - name: Sincroniza repositório no host
+      ansible.posix.synchronize:
+        src: "{{ playbook_dir }}/../.."
+        dest: "/home/rag/projeto_harness_engineering"
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=.venv"
+          - "--exclude=data"
+          - "--exclude=samples/corpus"
+
+    - name: Cria ficheiro .env a partir do template
+      template:
+        src: env.j2
+        dest: "/home/rag/projeto_harness_engineering/.env.local"
+
+    - name: Terraform init
+      command:
+        cmd: terraform init -input=false
+        chdir: /home/rag/projeto_harness_engineering/infra/terraform
+
+    - name: Terraform apply
+      command:
+        cmd: "terraform apply -input=false -auto-approve -var-file=envs/{{ inventory_hostname }}.tfvars"
+        chdir: /home/rag/projeto_harness_engineering/infra/terraform
+
+    - name: Healthcheck pós-deploy (só PC1)
+      uri:
+        url: "http://localhost:8000/health"
+        status_code: 200
+      retries: 30
+      delay: 5
+      when: host_role == "server"

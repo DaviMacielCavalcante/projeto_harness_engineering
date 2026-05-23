@@ -221,6 +221,11 @@ infra/terraform/.terraform.lock.hcl
 # Ansible
 infra/ansible/*.retry
 infra/ansible/.vault_pass
+infra/ansible/inventory.yml
+
+# Terraform — ficheiros com IPs/credenciais reais (usa *.example como referência)
+infra/terraform/envs/pc2.tfvars
+infra/terraform/envs/pc3.tfvars
 
 # IDE adicionais
 .DS_Store

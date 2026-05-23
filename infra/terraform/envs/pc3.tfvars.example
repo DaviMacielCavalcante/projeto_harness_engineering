@@ -1,0 +1,20 @@
+# Copia este ficheiro para pc3.tfvars e preenche com os valores reais.
+#
+# Como obter o IP Tailscale do PC1:
+#   No PC1 (Linux): tailscale ip -4
+#   Resultado esperado: 100.x.y.z  (rede privada Tailscale, não roteável pela internet)
+#
+# Como obter o IP Tailscale do PC3:
+#   No PC3: tailscale ip -4
+#
+# A password do RabbitMQ (guest:guest) é o default de desenvolvimento.
+# Não expor em produção — alterar via RABBITMQ_DEFAULT_USER / RABBITMQ_DEFAULT_PASS.
+
+host_role     = "worker"
+tailscale_pc1 = "100.FILL.ME.IN"
+rabbit_url    = "amqp://guest:guest@100.FILL.ME.IN:5672/"
+ollama_url    = "http://100.FILL.ME.IN:11434"
+qdrant_url    = "http://100.FILL.ME.IN:6333"
+redis_url     = "redis://100.FILL.ME.IN:6379/0"
+rerank_url    = "http://100.FILL.ME.IN:8081"
+image_tag     = "0.1.0-b3"

@@ -1,0 +1,24 @@
+---
+- name: Adiciona repositório NVIDIA Container Toolkit
+  shell: |
+    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+      | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+      | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+      | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+  args:
+    creates: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+- name: Instala nvidia-container-toolkit
+  apt:
+    name: nvidia-container-toolkit
+    state: present
+    update_cache: yes
+
+- name: Configura runtime Docker para NVIDIA
+  command: nvidia-ctk runtime configure --runtime=docker
+
+- name: Reinicia Docker para activar runtime NVIDIA
+  service:
+    name: docker
+    state: restarted

@@ -1,0 +1,19 @@
+---
+- name: Bootstrap dos hosts (Docker + Tailscale)
+  hosts: all
+  become: true
+  roles:
+    - docker
+    - tailscale
+  tasks:
+    - name: Garante utilizador rag no grupo docker
+      user:
+        name: rag
+        groups: docker
+        append: true
+
+- name: NVIDIA Container Toolkit (só PC1)
+  hosts: pc1
+  become: true
+  roles:
+    - nvidia

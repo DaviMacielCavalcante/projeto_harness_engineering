@@ -1,0 +1,27 @@
+---
+- name: Adiciona repositório Tailscale
+  shell: |
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_distribution_release }}.noarmor.gpg \
+      | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_distribution_release }}.tailscale-keyring.list \
+      | tee /etc/apt/sources.list.d/tailscale.list >/dev/null
+  args:
+    creates: /etc/apt/sources.list.d/tailscale.list
+
+- name: Instala Tailscale
+  apt:
+    name: tailscale
+    state: present
+    update_cache: yes
+
+- name: Habilita e inicia serviço tailscaled
+  service:
+    name: tailscaled
+    state: started
+    enabled: yes
+
+- name: Aviso — autenticação manual necessária
+  debug:
+    msg: >
+      Após este playbook, corre 'sudo tailscale up' em cada host
+      e copia o IP retornado para infra/ansible/inventory.yml

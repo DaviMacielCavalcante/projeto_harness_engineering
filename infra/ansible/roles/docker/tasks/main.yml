@@ -1,0 +1,43 @@
+---
+- name: Atualiza cache apt
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Instala dependências do repositório Docker
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - gnupg
+      - lsb-release
+    state: present
+
+- name: Adiciona chave GPG do Docker
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Adiciona repositório Docker
+  apt_repository:
+    repo: "deb https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+    filename: docker
+
+- name: Instala Docker CE e plugin Compose
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+    update_cache: yes
+
+- name: Garante daemon Docker em execução
+  service:
+    name: docker
+    state: started
+    enabled: yes
