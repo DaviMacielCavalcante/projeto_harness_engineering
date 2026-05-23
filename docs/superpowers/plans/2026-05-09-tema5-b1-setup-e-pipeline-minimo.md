@@ -1989,12 +1989,14 @@ Quando todos passarem: **B1 concluído**. Próximo passo: pedir para Claude gera
 
 ---
 
-## Notas de execução paralela (Trilhas A/B/C)
+## Notas de execução paralela (Davi / Pablo Abdon / João Miguel)
 
 Sugestão de divisão durante o B1 (3 dias) para minimizar lockstep:
 
-- **Trilha A (autor / PC1):** Tasks 1, 2, 3, 7, 8, 12 (config, logging, schemas, compose, gateway, prompts).
-- **Trilha B (colega 1):** Tasks 4, 5, 6, 9, 10, 11, 13 (schemas wider, ollama client, messaging, chunking, parsing, ingest+query workers).
-- **Trilha C (colega 2):** Tasks 14, 15 + bootstrap manual de Tailscale + Docker nos PCs (em paralelo, fora deste plano — vira input do B3).
+- **Davi (autor / PC1, originalmente Trilha A):** Tasks 1, 2, 3, 7, 8, 12 (config, logging, schemas, compose, gateway, prompts).
+- **Pablo Abdon (colega 1, → Davi):** Tasks 4, 5, 6, 9, 10, 11, 13 (schemas wider, ollama client, messaging, chunking, parsing, ingest+query workers).
+- **João Miguel (colega 2, → Davi):** Tasks 14, 15 + bootstrap manual de Tailscale + Docker nos PCs (em paralelo, fora deste plano — vira input do B3).
 
-A ordem rígida do plano garante TDD; a divisão por trilhas é só sugestão de quem executa cada uma. Algumas tasks dependem de outras (B → A para configs/schemas), então considere pareamento nos primeiros dias.
+> **Realização efetiva:** Davi implementou sozinho **todas** as 15 tasks do B1 (Trilhas A + B + C, exceto o bootstrap de Tailscale/Docker em `pc2-jm` e `abdon-workstation` que depende dos colegas). A divisão acima ficou como referência histórica do plano original.
+
+A ordem rígida do plano garante TDD; a divisão por trilhas era sugestão de quem executa cada uma. Algumas tasks dependem de outras (Pablo Abdon → Davi para configs/schemas), então considere pareamento nos primeiros dias.

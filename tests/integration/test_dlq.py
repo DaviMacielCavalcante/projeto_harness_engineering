@@ -1,4 +1,4 @@
-"""Teste de integração: msg que falha 3× cai na DLQ.
+"""Teste de integração: msg que falha 3x cai na DLQ.
 
 Valida o ciclo de retry + dead-lettering implementado na Task 1 do B3:
   - `declare_topology` cria fila principal com `x-dead-letter-*` + DLQ ligada à DLX.
@@ -14,6 +14,7 @@ Execução:
 """
 
 import asyncio
+import contextlib
 import os
 from typing import Any
 
@@ -66,9 +67,7 @@ async def test_message_lands_in_dlq_after_max_attempts() -> None:
         # provarmos que houve exatamente N tentativas.
         attempts_seen: list[int] = []
 
-        async def always_fails(
-            msg: AbstractIncomingMessage, payload: dict[str, Any]
-        ) -> None:
+        async def always_fails(msg: AbstractIncomingMessage, payload: dict[str, Any]) -> None:
             attempts_seen.append(1)
             raise RuntimeError("explode")
 
@@ -92,25 +91,18 @@ async def test_message_lands_in_dlq_after_max_attempts() -> None:
         # Cancela e aguarda o consumer encerrar limpo — evita warning de
         # "task was destroyed but it is pending" no teardown do pytest-asyncio.
         consumer_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await consumer_task
-        except asyncio.CancelledError:
-            pass
 
         # Asserção 1: exatamente 3 entregas ao handler (nem mais, nem menos).
-        assert len(attempts_seen) == 3, (
-            f"esperado 3 tentativas, observado {len(attempts_seen)}"
-        )
+        assert len(attempts_seen) == 3, f"esperado 3 tentativas, observado {len(attempts_seen)}"
 
         # Asserção 2: a msg final caiu na DLQ. passive=True na inspeção pra NÃO
         # redeclarar (redeclaração com arguments divergentes dá PRECONDITION_FAILED).
         ch = await conn.channel()
         try:
-            dlq_inspect = await ch.declare_queue(
-                name=dlq_name, durable=True, passive=True
-            )
-            assert dlq_inspect.declaration_result.message_count >= 1, (
-                f"DLQ vazia: message_count={dlq_inspect.declaration_result.message_count}"
-            )
+            dlq_inspect = await ch.declare_queue(name=dlq_name, durable=True, passive=True)
+            count = dlq_inspect.declaration_result.message_count
+            assert count is not None and count >= 1, f"DLQ vazia: message_count={count}"
         finally:
             await ch.close()

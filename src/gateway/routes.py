@@ -9,6 +9,7 @@ Endpoints:
 
 import hashlib
 import json
+import time
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -16,8 +17,9 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from src.shared.config import settings
 from src.shared.logging import bind_correlation_id, clear_correlation_id, configure_logging
 from src.shared.messaging import publish_json
-from src.shared.metrics import metrics_response
+from src.shared.metrics import errors, metrics_response
 from src.shared.schemas import (
+    Citation,
     DocumentMessage,
     IngestRequest,
     IngestResponse,
@@ -103,32 +105,50 @@ async def ingest(req: IngestRequest, request: Request) -> IngestResponse:
 
 @router.post("/query", response_model=QueryResponse)
 async def query(req: QueryRequest, request: Request) -> QueryResponse:
-    """Pergunta sob padrão RPC sobre RabbitMQ.
+    """Pergunta sob padrão RPC sobre RabbitMQ, com fallback degraded em timeout.
 
-    Cria uma reply queue exclusiva, publica a pergunta em `queue_query_requests`
-    com `reply_to=<reply_queue>`, e aguarda o query-worker responder na reply
-    queue. Timeout de 120s.
+    Caminho feliz: cria uma reply queue exclusiva, publica a pergunta em
+    ``queue_query_requests`` com ``reply_to=<reply_queue>``, e aguarda o
+    query-worker responder na reply queue (timeout 120s).
+
+    Caminho degraded (B3 Task 2): se o ``iterator(timeout=120)`` estourar
+    (query-worker fora, Ollama travado, pool sobrecarregado), o handler
+    NÃO devolve 504 vazio — em vez disso vai direto no Qdrant + Ollama
+    (via ``app.state.qdrant`` / ``app.state.ollama``), faz retrieval bruto,
+    e responde com ``answer="[degraded mode] sem síntese; veja as citações
+    abaixo."``. Filosofia "degradar > quebrar". Logs/métrica:
+    ``log.warning("query.degraded.*")`` + ``errors{service=gateway,
+    error_type=query_timeout}`` incrementado.
 
     Parameters
     ----------
     req : QueryRequest
         Pergunta (question, top_k, session_id opcional).
     request : Request
-        Request FastAPI — usado para acessar `app.state.rabbitmq`.
+        Request FastAPI — usado para acessar ``app.state.rabbitmq`` (caminho
+        feliz) e ``app.state.qdrant`` / ``app.state.ollama`` (fallback).
 
     Returns
     -------
     QueryResponse
-        Resposta do query-worker (texto + citações + latência).
+        Resposta normal do query-worker (texto sintetizado + citações +
+        latência), OU resposta degraded (sentinel ``[degraded mode] ...``
+        + citações brutas + ``usage={"tokens_in": 0, "tokens_out": 0}``).
 
     Raises
     ------
     HTTPException
-        504 se nenhuma resposta chegar dentro do timeout.
+        503 se o fallback degraded também falhar (Ollama fora + worker fora,
+        Qdrant indisponível, payload malformado) — serviço genuinamente
+        indisponível.
+        504 só em cenário raro: o ``iterator`` do reply queue sai sem msg
+        sem disparar ``TimeoutError`` (improvável em runtime).
     """
     correlation_id = f"q-{uuid.uuid4().hex[:8]}"
 
     timeout_detail = "query timeout"
+
+    t0 = time.perf_counter()
 
     try:
         bind_correlation_id(correlation_id=correlation_id)
@@ -169,7 +189,43 @@ async def query(req: QueryRequest, request: Request) -> QueryResponse:
                 raise HTTPException(status_code=504, detail=timeout_detail)
             except TimeoutError:
                 log.warning("query.timeout")
-                raise HTTPException(status_code=504, detail=timeout_detail) from None
+
+                errors.labels(service="gateway", error_type="query_timeout").inc()
+
+                try:
+                    log.warning("query.degraded.starting")
+
+                    q_vec = await request.app.state.ollama.embed(
+                        text=req.question, model=settings.embedding_model
+                    )
+
+                    result = await request.app.state.qdrant.query_points(
+                        collection_name=settings.qdrant_collection, query=q_vec, limit=req.top_k
+                    )
+
+                    citations = [
+                        Citation(
+                            doc_id=h.payload["doc_id"],
+                            chunk_id=h.payload["chunk_id"],
+                            page=h.payload.get("page"),
+                            snippet=h.payload["text"][:240],
+                            source=h.payload["source"],
+                        )
+                        for h in result.points
+                    ]
+
+                    log.warning("query.degraded.responded", n_citations=len(citations))
+
+                    return QueryResponse(
+                        answer="[degraded mode] sem síntese; veja as citações abaixo.",
+                        citations=citations,
+                        usage={"tokens_in": 0, "tokens_out": 0},
+                        latency_ms=int((time.perf_counter() - t0) * 1000),
+                    )
+
+                except Exception as e:
+                    log.error("query.degraded.failed", error=str(e))
+                    raise HTTPException(status_code=503, detail="serviço indisponível") from None
         finally:
             await channel.close()
 

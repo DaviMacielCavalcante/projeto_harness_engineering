@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from qdrant_client import AsyncQdrantClient
 from starlette.middleware.base import RequestResponseEndpoint
 
 from src.gateway.routes import router
@@ -21,6 +22,7 @@ from src.shared.config import settings
 from src.shared.logging import configure_logging
 from src.shared.messaging import connect, declare_topology
 from src.shared.metrics import request_duration
+from src.shared.ollama_client import OllamaClient
 
 log = configure_logging("gateway")
 
@@ -43,6 +45,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.queue_query_requests,
         )
         app.state.rabbitmq = conn
+
+        app.state.qdrant = AsyncQdrantClient(url=settings.qdrant_url)
+        app.state.ollama = OllamaClient(base_url=settings.ollama_url)
+
         log.info("gateway.ready", rabbitmq=settings.rabbitmq_url)
         yield
 

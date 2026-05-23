@@ -244,7 +244,7 @@ Expected: PASS.
 **Files:**
 - Modify: `src/gateway/routes.py`
 
-- [ ] **Step 1: Adicionar timeout configurável e fallback chunks-only**
+- [x] **Step 1: Adicionar timeout configurável e fallback chunks-only** ✓ 2026-05-23: lifespan instancia `app.state.qdrant = AsyncQdrantClient(url=settings.qdrant_url)` + `app.state.ollama = OllamaClient(base_url=settings.ollama_url)`. Em `/query`, no `except TimeoutError`: incrementa `errors.labels(service="gateway", error_type="query_timeout").inc()`, abre `try:` com `log.warning("query.degraded.starting")`, faz `await ollama.embed(text=..., model=settings.embedding_model)`, `await qdrant.query_points(collection_name=..., query=q_vec, limit=req.top_k)`, list-comp de `Citation(doc_id=h.payload["doc_id"], chunk_id=h.payload["chunk_id"], page=h.payload.get("page"), snippet=h.payload["text"][:240], source=h.payload["source"]) for h in result.points`, retorna `QueryResponse(answer="[degraded mode] sem síntese; veja as citações abaixo.", citations=..., usage={"tokens_in": 0, "tokens_out": 0}, latency_ms=int((time.perf_counter() - t0) * 1000))`. `except Exception as e: log.error("query.degraded.failed", error=str(e)); raise HTTPException(status_code=503, detail="serviço indisponível") from None`. **Divergências do template do plano:** (a) `qdrant.query_points(...)` em vez de `.search(...)` deprecated — consistência com o query-worker `handle_query`; (b) `latency_ms = int((time.perf_counter() - t0) * 1000)` com `t0` capturado no início do handler (não a gambiarra do plano `int(time.perf_counter() * 1000) % 1_000_000`); (c) métrica Prometheus `errors{service=gateway,error_type=query_timeout}` (não estava no plano) + log estruturado `query.degraded.starting`/`query.degraded.responded`/`query.degraded.failed` (não estava no plano) — par log+métrica complementar pra trend agregado vs evento; (d) `except Exception as e` nomeado em vez de bare, `from None` no raise pra suprimir chained traceback; (e) docstring do handler reescrita anunciando caminho feliz vs degraded + Raises 503/504. Code-partner.
 
 No endpoint `/query`, quando o `iterator(timeout=120)` expirar (servidor de inferência caído ou pool sobrecarregado), em vez de devolver 504 vazio, fazer um retrieval direto contra o Qdrant e devolver os chunks brutos com status `degraded`.
 
@@ -294,7 +294,7 @@ Em `routes.py`, substitua o `raise HTTPException(504, ...)` por:
 
 (adicione `import time` no topo se ainda não estiver).
 
-- [ ] **Step 2: Smoke do fallback**
+- [x] **Step 2: Smoke do fallback** ✓ 2026-05-23. **Divergência crítica:** `make smoke` é poluído pelo degraded (4-5 queries seguidas × 120s cada ≈ 10min + asserts B2 quebram porque cache L2/sessão caem todas pelo degraded). Substituído por `curl` direto: `docker stop rag-query-worker && curl -X POST http://localhost:8000/query --max-time 180 -d '{"question":"...","top_k":3}'` → resposta `{"answer":"[degraded mode] sem síntese; veja as citações abaixo.", citations: [3 itens reais do PDF], usage:{tokens_in:0,tokens_out:0}, latency_ms: 120066}` (120s timeout interno + 66ms embed/qdrant); 2ª execução em 54ms (cache quente Ollama+Qdrant). Métrica `rag_errors_total{error_type="query_timeout",service="gateway"}=2.0`; log do gateway com `query.timeout → query.degraded.starting → query.degraded.responded n_citations=3` em 2 correlation_ids. **Saga do deploy:** primeiro smoke retornou 504 mesmo com `query.timeout` no log porque o container `rag-gateway` estava `Up 2 hours` rodando código antigo (sem fallback). Fix: `docker compose build gateway && docker compose up -d --no-deps gateway`. Lição registrada no §10.1 do relatório de aprendizagem.
 
 ```bash
 docker stop rag-query-worker
@@ -1393,8 +1393,8 @@ Quando todos passarem: **B3 concluído**.
 
 ## Notas de execução paralela (B3)
 
-- **Trilha A:** Tasks 1 (DLX/DLQ), 2 (degraded mode), 4 (observabilidade — Grafana, Prometheus, Loki, Promtail).
-- **Trilha B:** Tasks 3 (workers /metrics), 7 (seed_corpus), 8 (chaos + dlq_inspector).
-- **Trilha C:** Tasks 5 (Terraform), 6 (Ansible), validação Tailscale + setup físico dos PCs.
+- **Davi (originalmente Trilha A):** Tasks 1 (DLX/DLQ), 2 (degraded mode), 4 (observabilidade — Grafana, Prometheus, Loki, Promtail).
+- **Pablo Abdon:** Tasks 3 (workers /metrics), 7 (seed_corpus), 8 (chaos + dlq_inspector).
+- **João Miguel:** Tasks 5 (Terraform), 6 (Ansible), validação Tailscale + setup físico dos PCs.
 
 Pareamento crítico nas Tasks 5+6 e na primeira validação distribuída end-to-end (provavelmente o ponto mais propenso a engasgo).
