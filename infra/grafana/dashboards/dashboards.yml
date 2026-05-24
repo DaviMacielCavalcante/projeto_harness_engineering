@@ -1,0 +1,16 @@
+# Provider de dashboards: Grafana varre `path` em busca de *.json e
+# importa cada um automaticamente (atualiza a cada 10s).
+
+apiVersion: 1
+
+providers:
+  - name: rag
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

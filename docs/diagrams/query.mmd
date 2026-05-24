@@ -1,0 +1,49 @@
+sequenceDiagram
+  actor User
+  participant GW as Gateway
+  participant ReqQ as RMQ query.requests
+  participant ReplyQ as RMQ reply.{cid} (exclusiva)
+  participant QW as query-worker
+  participant L1 as Redis L1 (embed cache)
+  participant OLM as Ollama
+  participant QDR as Qdrant
+  participant RRS as rerank-service
+  participant L2 as Redis L2 (resp cache)
+  participant SES as Redis sessão
+
+  User->>GW: POST /query {question, top_k, session_id}
+  GW->>ReplyQ: declare
+  GW->>ReqQ: publish (reply_to=ReplyQ, cid)
+  GW->>ReplyQ: aguarda (timeout 120s)
+  ReqQ-->>QW: deliver
+  Note over QW: Fase 1 — embed
+  QW->>L1: GET emb:{sha(query)}
+  alt L1 miss
+    QW->>OLM: POST /api/embeddings
+    OLM-->>QW: vetor 768d
+    QW->>L1: SETEX (TTL 7d)
+  end
+  Note over QW: Fase 2 — retrieval top-20
+  QW->>QDR: query_points(top_k=20)
+  QDR-->>QW: 20 candidatos
+  Note over QW: Fase 3 — rerank top-5
+  QW->>RRS: POST /rerank (top_k=5)
+  RRS-->>QW: 5 ordenados (id, score, text)
+  Note over QW: Fase 4 — cache L2
+  QW->>L2: GET resp:{sha(query+ids)}
+  alt L2 hit
+    L2-->>QW: resposta cacheada
+  else L2 miss
+    Note over QW: Fase 5 — montagem
+    QW->>SES: get_history + get_summary
+    QW->>QW: build_messages (system + user com preâmbulo)
+    Note over QW: Fase 6 — generation
+    QW->>OLM: POST /api/chat (tools=[cite_source])
+    OLM-->>QW: {message, tool_calls}
+    QW->>L2: SETEX (TTL 1h)
+  end
+  Note over QW: Fase 7 — sessão + reply
+  QW->>SES: append turn
+  QW->>ReplyQ: publish QueryResponse
+  ReplyQ-->>GW: deliver
+  GW-->>User: {answer, citations, usage, latency_ms}

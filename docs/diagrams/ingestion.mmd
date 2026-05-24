@@ -1,0 +1,26 @@
+sequenceDiagram
+  actor User
+  participant GW as Gateway
+  participant DocQ as RMQ ingest.documents
+  participant DocW as ingest-worker-doc
+  participant ChunkQ as RMQ ingest.chunks
+  participant ChunkW as ingest-worker-chunk
+  participant OLM as Ollama embeddings
+  participant QDR as Qdrant
+
+  User->>GW: POST /ingest (base64 PDF)
+  GW->>DocQ: publish DocumentMessage
+  GW-->>User: 202 Accepted {doc_id}
+  DocQ-->>DocW: deliver
+  DocW->>DocW: parse (pypdf) + chunk_text (recursive)
+  loop por chunk (~800 tokens, overlap 120)
+    DocW->>ChunkQ: publish ChunkMessage
+  end
+  DocW-->>DocQ: ack
+  par N consumidores em paralelo
+    ChunkQ-->>ChunkW: deliver
+    ChunkW->>OLM: POST /api/embeddings (nomic-embed-text)
+    OLM-->>ChunkW: vetor 768d
+    ChunkW->>QDR: upsert (point_id=sha256(chunk_id), vector, payload)
+    ChunkW-->>ChunkQ: ack
+  end

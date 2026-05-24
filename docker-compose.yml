@@ -30,9 +30,15 @@ services:
     image: rabbitmq:3-management
     container_name: rag-rabbitmq
     profiles: ["all", "server"]
+    environment:
+      # Habilita o plugin rabbitmq_prometheus (já incluso na imagem),
+      # que expõe métricas no formato Prometheus em :15692/metrics.
+      # Mantém `rabbitmq_management` (UI + API REST) ativo.
+      RABBITMQ_PLUGINS: "rabbitmq_management rabbitmq_prometheus"
     ports:
       - 5672:5672
       - 15672:15672
+      - 15692:15692
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
@@ -138,6 +144,69 @@ services:
       WORKER_KIND: query
       SERVICE_NAME: query-worker
 
+  # -------------------------------------------------------------------------
+  # Observabilidade (B3 Task 4) — Prometheus + Grafana + Loki + Promtail.
+  # Prometheus/Grafana/Loki vivem no `server` (PC1); Promtail vive em todo
+  # host (server + worker) lendo o /var/run/docker.sock local.
+  # -------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: rag-prometheus
+    profiles: ["all", "server"]
+    ports:
+      - 9090:9090
+    volumes:
+      - ./infra/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.path=/prometheus"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: rag-grafana
+    profiles: ["all", "server"]
+    ports:
+      - 3000:3000
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: rag-loki
+    profiles: ["all", "server"]
+    ports:
+      - 3100:3100
+    volumes:
+      - ./infra/loki:/etc/loki
+      - loki_data:/loki
+    command: -config.file=/etc/loki/loki-config.yml
+    restart: unless-stopped
+
+  # Roda em TODOS os hosts (server + worker). Descobre containers Docker
+  # locais via /var/run/docker.sock; logs JSON do structlog viram streams
+  # com labels `service`, `level`, `correlation_id` no Loki central.
+  promtail:
+    image: grafana/promtail:3.2.0
+    container_name: rag-promtail
+    profiles: ["all", "server", "worker"]
+    volumes:
+      - ./infra/promtail:/etc/promtail
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/promtail-config.yml
+    restart: unless-stopped
+
 # -------------------------------------------------------------------------
 # Volumes nomeados — Docker gerencia, persistem entre `down`/`up`.
 # Pra apagar tudo de verdade: `docker compose down -v`.
@@ -147,6 +216,9 @@ volumes:
   qdrant_storage:
   redis_data:
   ollama_models:
+  prometheus_data:
+  grafana_data:
+  loki_data:
 
 networks:
   default:

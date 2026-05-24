@@ -1,0 +1,54 @@
+flowchart TB
+  subgraph PC1["PC1 — pc1-davi (servidor + GPU RTX 4060 Ti)"]
+    direction TB
+    GW[Gateway FastAPI<br/>:8000]
+    RMQ[(RabbitMQ<br/>:5672 / :15672 / :15692)]
+    QDR[(Qdrant<br/>:6333)]
+    RED[(Redis<br/>:6379)]
+    OLM[Ollama<br/>:11434<br/>qwen2.5:7b + nomic-embed]
+    RRS[rerank-service<br/>:8081<br/>bge-reranker-v2-m3]
+    PRM[Prometheus :9090]
+    GRF[Grafana :3000]
+    LKI[Loki :3100]
+  end
+  subgraph PC2["PC2 — abdon-workstation (worker)"]
+    IWD2[ingest-worker-doc]
+    IWC2[ingest-worker-chunk]
+    QW2[query-worker]
+    PT2[Promtail]
+  end
+  subgraph PC3["PC3 — pc2-jm (worker)"]
+    IWD3[ingest-worker-doc]
+    IWC3[ingest-worker-chunk]
+    QW3[query-worker]
+    PT3[Promtail]
+  end
+  User([Cliente HTTP]) -->|/ingest, /query| GW
+  GW <--> RMQ
+  IWD2 <--> RMQ
+  IWC2 <--> RMQ
+  QW2 <--> RMQ
+  IWD3 <--> RMQ
+  IWC3 <--> RMQ
+  QW3 <--> RMQ
+  IWC2 --> OLM
+  IWC3 --> OLM
+  QW2 --> OLM
+  QW3 --> OLM
+  IWC2 --> QDR
+  IWC3 --> QDR
+  QW2 --> QDR
+  QW3 --> QDR
+  QW2 <--> RED
+  QW3 <--> RED
+  QW2 --> RRS
+  QW3 --> RRS
+  PT2 -.logs.-> LKI
+  PT3 -.logs.-> LKI
+  PRM -.scrape.-> GW
+  PRM -.scrape.-> RRS
+  PRM -.scrape.-> RMQ
+  PRM -.scrape.-> IWC2
+  PRM -.scrape.-> QW2
+  GRF --> PRM
+  GRF --> LKI

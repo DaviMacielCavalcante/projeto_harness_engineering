@@ -1,0 +1,22 @@
+# Provisionamento automático: Grafana lê este arquivo no boot e cria os
+# datasources sem precisar de cliques na UI. UIDs fixos para que o dashboard
+# provisionado (`infra/grafana/dashboards/rag-distribuido.json`) possa
+# referenciá-los de forma estável.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false

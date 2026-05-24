@@ -1,0 +1,115 @@
+{
+  "uid": "rag-distribuido",
+  "title": "RAG Distribuído",
+  "tags": ["rag", "tema5"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": { "from": "now-15m", "to": "now" },
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Throughput",
+      "description": "Vazão observada. `queries/s` por worker e status (atendidas pelo query-worker, sucesso ou erro); `docs/s` por worker (documentos particionados pelo ingest-worker-doc).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(rag_throughput_queries_total[1m])) by (worker_id, status)",
+          "legendFormat": "queries/s {{worker_id}} ({{status}})"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(rag_throughput_docs_total[1m])) by (worker_id)",
+          "legendFormat": "docs/s {{worker_id}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Latência por fase (p95)",
+      "description": "p95 do pipeline de query por fase (embed, retrieval, rerank, generate, total). Histograma agregado entre workers — se quiser dissecar por worker_id, troque `by (phase, le)` por `by (phase, worker_id, le)`.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(rag_query_pipeline_duration_seconds_bucket[5m])) by (phase, le))",
+          "legendFormat": "{{phase}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Tokens",
+      "description": "Tokens/s por direção (in/out) e por modelo. Cruzar com latência de generate para detectar respostas anormalmente longas.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(rag_tokens_total[1m])) by (direction, model)",
+          "legendFormat": "{{direction}} {{model}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Saúde — Ollama in-flight e erros",
+      "description": "Sinal de saúde de runtime. Gauge `rag_ollama_inflight_requests` indica saturação do Ollama (sobe quando o gerador é o gargalo). `errors/s` é o agregado por serviço.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rag_ollama_inflight_requests",
+          "legendFormat": "ollama in-flight"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(rag_errors_total[1m])) by (service)",
+          "legendFormat": "errors/s {{service}}"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Cache hit ratio",
+      "description": "Razão hits/(hits+misses) por camada (L1 = embedding de query, L2 = resposta inteira). `clamp_min` no denominador evita divisão por zero quando não há tráfego ainda. Eixo separado porque a unidade é proporção (0–1), não count/s — manter no mesmo painel da Saúde quebraria a escala.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(rag_cache_hits_total[5m])) by (cache_layer) / clamp_min(sum(rate(rag_cache_hits_total[5m])) by (cache_layer) + sum(rate(rag_cache_misses_total[5m])) by (cache_layer), 0.0001)",
+          "legendFormat": "hit ratio {{cache_layer}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "options": {}
+    }
+  ]
+}
