@@ -33,7 +33,8 @@ resource "docker_container" "rabbitmq" {
     "RABBITMQ_PLUGINS=rabbitmq_management rabbitmq_prometheus",
   ]
   networks_advanced {
-    name = var.network_name
+    name    = var.network_name
+    aliases = ["rabbitmq"]
   }
   ports {
     internal = 5672
@@ -75,7 +76,8 @@ resource "docker_container" "qdrant" {
   name  = "rag-qdrant"
   image = docker_image.qdrant.image_id
   networks_advanced {
-    name = var.network_name
+    name    = var.network_name
+    aliases = ["qdrant"]
   }
   ports {
     internal = 6333
@@ -103,7 +105,8 @@ resource "docker_container" "redis" {
   name  = "rag-redis"
   image = docker_image.redis.image_id
   networks_advanced {
-    name = var.network_name
+    name    = var.network_name
+    aliases = ["redis"]
   }
   ports {
     internal = 6379
@@ -131,7 +134,8 @@ resource "docker_container" "ollama" {
   name  = "rag-ollama"
   image = docker_image.ollama.image_id
   networks_advanced {
-    name = var.network_name
+    name    = var.network_name
+    aliases = ["ollama"]
   }
   ports {
     internal = 11434
@@ -141,6 +145,10 @@ resource "docker_container" "ollama" {
     volume_name    = docker_volume.ollama_models.name
     container_path = "/root/.ollama"
   }
+
+  gpus    = "all"
+  runtime = "nvidia"
+
   restart = "unless-stopped"
 }
 
@@ -168,7 +176,8 @@ resource "docker_container" "gateway" {
     "RERANK_URL=http://rag-rerank:8081",
   ]
   networks_advanced {
-    name = var.network_name
+    name    = var.network_name
+    aliases = ["gateway"]
   }
   ports {
     internal = 8000
@@ -197,7 +206,8 @@ resource "docker_container" "rerank" {
     "SERVICE_NAME=rerank-service",
   ]
   networks_advanced {
-    name = var.network_name
+    name    = var.network_name
+    aliases = ["rerank-service"]
   }
   ports {
     internal = 8081

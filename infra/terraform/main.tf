@@ -25,6 +25,17 @@ module "server" {
   image_tag    = var.image_tag
 }
 
+# Observabilidade vive junto do server (PC1). Prometheus/Grafana/Loki são
+# centrais; Promtail roda em todo host (server + worker) lendo o
+# /var/run/docker.sock local — quando os workers tiverem seu próprio módulo
+# Promtail no host deles, este aqui só cobre o PC1.
+module "observability" {
+  count  = var.host_role == "server" ? 1 : 0
+  source = "./modules/observability"
+
+  network_name = docker_network.rag_net.name
+}
+
 module "worker" {
   count  = var.host_role == "worker" ? 1 : 0
   source = "./modules/worker"

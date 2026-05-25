@@ -19,16 +19,25 @@ scrape_configs:
     static_configs:
       - targets: ["rerank-service:8081"]
 
-  # Workers expõem /metrics via aiohttp standalone
-  # (`src/shared/workers_metrics_server.py`, Task 3 do B3).
-  # Mesma porta interna (9100) — o nome do container é o discriminador.
+  # Workers expõem /metrics via aiohttp standalone (porta interna 9100,
+  # mapeada no host para 9100/9101/9102). No Modo 2 distribuído, eles vivem
+  # em PC2/PC3 — o Prometheus do PC1 alcança via IP Tailscale do host
+  # remoto. Pra incluir novos hosts, replicar o bloco com o IP novo.
   - job_name: workers
     metrics_path: /metrics
     static_configs:
       - targets:
-          - "ingest-worker-doc:9100"
-          - "ingest-worker-chunk:9100"
-          - "query-worker:9100"
+          - "100.83.175.44:9100"   # PC2 (pc2-jm) — ingest-worker-doc
+          - "100.83.175.44:9101"   # PC2 — ingest-worker-chunk
+          - "100.83.175.44:9102"   # PC2 — query-worker
+        labels:
+          host: pc2-jm
+      - targets:
+          - "100.116.173.87:9100"  # PC3 (desktop-ickv61v) — ingest-worker-doc
+          - "100.116.173.87:9101"  # PC3 — ingest-worker-chunk
+          - "100.116.173.87:9102"  # PC3 — query-worker
+        labels:
+          host: pc3-ickv61v
 
   # Plugin `rabbitmq_prometheus` (porta 15692). Já incluso na imagem
   # `rabbitmq:3-management`; ativado via env `RABBITMQ_PLUGINS` no compose.
