@@ -1,274 +1,67 @@
-# Relatório de aprendizagem - Pablo Abdon
+# Relatório de Aprendizagem
 
-> Status: rascunho didático para revisão do Pablo antes da entrega.
+## Sistema RAG Distribuído via Tailscale — Tema 5
 
-- **Disciplina:** Engenharia de Contexto e Harness Engineering aplicada à Programação Distribuída e Paralela
-- **Tema:** 5 - Sistema RAG distribuído em PCs físicos via Tailscale
-- **Período relatado:** fechamento do B3/B4/B5
-- **Trilha:** workers, operação local, observabilidade, corpus e scripts operacionais
+**Aluno:** Pablo Abdon
+**Disciplina:** Engenharia de Contexto e Harness Engineering aplicada à Programação Distribuída e Paralela
+**Instituição:** CESUPA — 2º bimestre de 2026
+**Período relatado:** fechamento dos Blocos B3, B4 e B5
 
-## 1. Visão geral do projeto
 
-O projeto é um sistema de perguntas e respostas usando RAG, que significa
-Retrieval-Augmented Generation. Em termos simples, o sistema não tenta responder
-só com o que o modelo de IA "sabe". Ele primeiro procura trechos relevantes em
-um conjunto de documentos, coloca esses trechos no contexto do modelo e só então
-pede uma resposta.
+## Sumário
 
-A ideia é evitar respostas inventadas. Se o sistema encontra um trecho bom no
-corpus, ele usa esse trecho para responder e citar a fonte. Se não encontra, a
-resposta correta deveria ser dizer que a informação não está no corpus.
+1. Introdução
+2. Contribuição técnica
+3. Aprendizados técnicos
+   3.1 Workers de fila e o gap de observabilidade
+   3.2 Scripts operacionais e o ciclo de vida das mensagens
+   3.3 Ambiente local heterogêneo: GPU AMD num projeto pensado para NVIDIA
+4. Aprendizados de processo
+5. Conclusão
 
-O projeto também é distribuído. Isso quer dizer que ele foi pensado para rodar
-em mais de uma máquina física, conectadas por Tailscale. Uma máquina concentra
-serviços principais, como gateway, banco vetorial, mensageria e modelo local. As
-outras máquinas podem rodar workers, que são processos que pegam tarefas em
-filas e executam trabalho pesado.
 
-## 2. Como o sistema funciona
+## 1. Introdução
 
-O sistema tem duas jornadas principais: ingestão de documentos e resposta a
-perguntas.
+Este relatório documenta o que aprendi ao integrar o projeto do Tema 5 da disciplina de Programação Distribuída e Paralela no fechamento operacional dos Blocos B3, B4 e B5. Entrei quando o sistema já tinha pipeline, filas, prompts, cache, observabilidade parcial e documentação técnica — o que faltava era destravar pontos práticos para validar a demo e o dashboard ponta-a-ponta. Procuro registrar tanto os ganhos técnicos — expor `/metrics` em workers de fila, construir scripts operacionais para corpus e DLQs, e lidar com um ambiente sem GPU NVIDIA — quanto os de processo, em especial sobre a diferença entre fazer um sistema *funcionar* e conseguir *operá-lo*.
 
-Na ingestão, um documento é enviado para o gateway pelo endpoint `POST /ingest`.
-O gateway não processa tudo diretamente. Ele publica uma mensagem no RabbitMQ,
-que é o sistema de filas. Depois, os workers de ingestão pegam essa mensagem.
 
-O primeiro worker de ingestão lê o documento, extrai o texto e quebra esse texto
-em pedaços menores, chamados chunks. Essa etapa é importante porque um documento
-inteiro costuma ser grande demais e pouco preciso para busca semântica.
+## 2. Contribuição técnica
 
-O segundo worker pega cada chunk, pede ao Ollama um embedding e grava esse vetor
-no Qdrant. Um embedding é uma representação numérica do significado do texto. O
-Qdrant guarda esses vetores para permitir buscar trechos parecidos com uma
-pergunta.
+Fui responsável pelo fechamento operacional do projeto: implementei o servidor de métricas dos workers em `src/shared/workers_metrics_server.py` usando `aiohttp`, reaproveitando o registro Prometheus já existente em `src/shared/metrics.py`; integrei o servidor no bootstrap de `src/workers/ingest/main.py` e `src/workers/query/main.py`; expus as portas `9100`/`9101`/`9102` no `docker-compose.yml` para os três workers; adicionei a configuração `worker_metrics_port` em `src/shared/config.py` e os testes unitários em `tests/unit/test_workers_metrics_server.py`. Criei também os scripts operacionais — `scripts/seed_corpus.py` (envio de corpus para `POST /ingest`), `scripts/dlq_inspector.py` (list/replay/purge das DLQs) e `scripts/chaos_test.sh`/`chaos_test.ps1` (cenários de falha controlada) — além do corpus mínimo em `samples/corpus/` e do conjunto de avaliação `data/eval_queries.jsonl` com 30 queries em PT/EN. Por fim, atualizei a documentação (`docs/decisoes.md`, `docs/prompts.md`, slides, `ENTREGA.md`, `README.md`, `TODO.md`) e validei a stack localmente, incluindo a criação de um `docker-compose.override.yml` para destravar o Ollama num ambiente com GPU AMD.
 
-Na jornada de pergunta, o usuário chama `POST /query`. O gateway publica a
-pergunta em outra fila do RabbitMQ. O query-worker consome essa pergunta,
-transforma a pergunta em embedding, busca chunks parecidos no Qdrant, passa os
-melhores candidatos pelo rerank-service e monta o prompt final para o modelo de
-linguagem.
 
-O modelo usado localmente roda no Ollama. No ambiente leve desta máquina, usamos
-`llama3.2:1b` para geração e `nomic-embed-text` para embeddings. Em uma máquina
-com GPU NVIDIA, o projeto pode usar um modelo maior, como `qwen2.5:7b-instruct`.
+## 3. Aprendizados técnicos
 
-## 3. Componentes principais
+### 3.1 Workers de fila e o gap de observabilidade
 
-O **gateway** é a porta de entrada HTTP do sistema. Ele recebe documentos e
-perguntas, mas delega o processamento para filas e workers.
+- **Workers não são serviços HTTP**: consomem trabalho via mensageria, não via requisição do usuário — o Prometheus, que faz *scrape* por HTTP, não tinha onde se conectar. O job `workers` ficava `DOWN` e parte dos painéis do Grafana ficava sem dados, mesmo com o pipeline funcionando corretamente.
+- **Servidor HTTP mínimo embutido**: a solução foi subir um pequeno `aiohttp` dentro de cada worker, expondo `/metrics` em portas distintas. Não foi preciso inventar métricas novas — bastou reaproveitar o registro Prometheus que já vivia em `src/shared/metrics.py`. O trabalho real era expor o que já existia no processo certo.
+- **Métricas como contrato de operação**: depois de expor, validei que `http://localhost:9100/metrics`, `9101` e `9102` retornavam métricas `rag_*` e que o Prometheus passou a marcar os três workers como `UP`. Esse fechamento simples é o que viabilizou alertas reais sobre o estado dos consumidores.
+- **Citation com página `"null"` como string**: durante a validação final, apareceu um caso em que o worker recebeu a página da citação como texto `"null"` e o schema esperava `int`. A mensagem foi reprocessada com sucesso, mas ficou anotado como ponto de melhoria — normalizar `null`/`"null"`/`"n/a"` antes de montar a citação final.
 
-O **RabbitMQ** é a mensageria. Ele organiza as filas de documentos, chunks,
-queries e DLQs. DLQ significa Dead Letter Queue: é onde caem mensagens que
-falharam repetidas vezes e precisam de inspeção.
+### 3.2 Scripts operacionais e o ciclo de vida das mensagens
 
-O **Qdrant** é o banco vetorial. Ele guarda os embeddings dos chunks e permite
-buscar os trechos mais parecidos com uma pergunta.
+- **Seed de corpus repetível**: `scripts/seed_corpus.py` lê PDFs, Markdown e HTML de uma pasta, converte para base64 e envia para `POST /ingest`, registrando quantos foram aceitos e quantos falharam. Popular o Qdrant de forma reproduzível é o que permite repetir experimentos sem depender de upload manual a cada rodada.
+- **DLQ inspector com três verbos**: `list`, `replay --limit N` e `purge --yes` cobrem o ciclo completo de mensagens que falharam — inspecionar, reprocessar com cuidado, e descartar quando não tem mais sentido reprocessar. Sem essas três operações, uma mensagem na DLQ era um beco sem saída.
+- **Chaos test como evidência, não como teste**: os scripts `.sh`/`.ps1` param e religam o worker de chunks, param e religam o Ollama, e disparam uma rajada de queries concorrentes. Não substituem testes unitários — geram evidência de que o sistema sobrevive a falhas reais, e o resultado vira input para o doc técnico (B3, Exp 4).
+- **Corpus mínimo versionável**: `samples/corpus/` tem documentos Markdown originais sobre engenharia de software, RAG, arquitetura distribuída, observabilidade e padrões de projeto. Não substitui um corpus grande, mas permite validar o funcionamento local sem commitar arquivos pesados ou de terceiros.
 
-O **Redis** é usado para cache e sessão. O cache evita repetir trabalho caro,
-como embedding de perguntas ou respostas já calculadas.
+### 3.3 Ambiente local heterogêneo: GPU AMD num projeto pensado para NVIDIA
 
-O **Ollama** serve os modelos locais. Ele gera embeddings e respostas.
+- **Falha de container ≠ bug da aplicação**: o `docker-compose.yml` reservava GPU NVIDIA para o Ollama. Numa máquina com GPU AMD isso quebrava no `docker compose up` antes do código rodar. O sinal de erro vinha do Docker, não da aplicação — isso ensinou a distinguir as duas camadas antes de procurar bug no lugar errado.
+- **Override local ignorado pelo Git**: a solução foi criar `docker-compose.override.yml` removendo a reserva de GPU NVIDIA, intencionalmente ignorado pelo Git por ser específico do ambiente. O Compose faz merge automático com o arquivo principal, então o `up` voltou a funcionar sem alterar o arquivo versionado.
+- **Modelo carregando em CPU**: na primeira execução do smoke após a stack subir, o tempo de resposta foi alto — não por bug, mas porque o Ollama estava carregando `llama3.2:1b` em CPU pura. Na segunda execução, com o modelo já em memória, o smoke fechou normalmente com `[smoke] OK`. Em IA local sem GPU, latência alta nem sempre é defeito; às vezes é só o custo do hardware disponível.
+- **Modelos leves para CPU vs modelo cheio para GPU**: o projeto usa `llama3.2:1b` (geração) e `nomic-embed-text` (embeddings) quando GPU NVIDIA não está disponível. No PC1 com GPU, o modelo de geração vira `qwen2.5:7b-instruct`. A escolha é parametrizada — não há código diferente por hardware, só configuração.
 
-O **rerank-service** melhora a ordem dos trechos recuperados. Primeiro o Qdrant
-busca candidatos de forma rápida; depois o reranker tenta escolher os mais
-relevantes com mais precisão.
 
-Os **workers** são processos que ficam escutando filas. Eles não recebem HTTP do
-usuário diretamente. Por isso, para o Prometheus conseguir monitorá-los, foi
-necessário adicionar um pequeno servidor HTTP de métricas dentro deles.
+## 4. Aprendizados de processo
 
-## 4. O papel da minha parte
+- **Operar é diferente de implementar**: entrei com o pipeline funcionando, e o trabalho mais valioso não foi escrever feature nova mas destravar pontos que impediam operação real — `/metrics` em workers, scripts para popular corpus, DLQ inspector, override de GPU. Em sistema distribuído, fazer funcionar não basta; é preciso conseguir ver, testar, popular, e inspecionar — e essa segunda camada é tão construída quanto a primeira.
+- **Tailscale como infraestrutura habilitadora**: não é parte da lógica de RAG, mas é o que permite transformar PCs separados em uma rede privada onde os workers acessam os serviços centrais com segurança. Esse tipo de componente fica "invisível" quando funciona, mas determina se o sistema distribuído realmente existe ou é só um plano no papel.
+- **Evidência operacional como entregável**: as validações de stack — Prometheus mostrando workers `UP`, Grafana com dashboard provisionado, Loki `ready`, Qdrant com `points_count=6`, smoke fechando com `[smoke] OK` — ficaram registradas em `data/evidencias-operacionais-pablo.md`. Não substituem a validação distribuída com o PC1, mas ancoram a parte local em fatos verificáveis em vez de "funcionou aqui".
+- **Documentação técnica como ferramenta de coordenação**: atualizar `decisoes.md`, `prompts.md`, slides, `ENTREGA.md`, `README.md`, `TODO.md` e `PENDENCIAS_FINAIS.md` no fechamento não foi burocracia — foi como o time mantém o estado real do projeto sincronizado entre quem entra e sai das sessões. Documentação aqui precede o código por design, e segui essa convenção.
 
-A minha parte entrou principalmente no fechamento operacional do projeto. O
-sistema já tinha pipeline, filas, prompts, cache, observabilidade parcial e
-documentação técnica. O que faltava era destravar pontos práticos para validar a
-demo e o dashboard.
 
-O item mais importante foi implementar `/metrics` nos workers. Antes disso, o
-Prometheus tentava raspar os workers, mas eles não tinham endpoint HTTP. Por
-isso o job `workers` ficava `DOWN` no Prometheus e alguns painéis do Grafana não
-tinham dados.
+## 5. Conclusão
 
-Foi criado o arquivo `src/shared/workers_metrics_server.py`, usando `aiohttp`.
-Esse arquivo sobe um servidor HTTP pequeno com a rota `/metrics`. Ele reutiliza
-o registro Prometheus já existente em `src/shared/metrics.py`, então não foi
-preciso inventar métricas novas. O trabalho foi expor as métricas no processo
-certo.
-
-Depois, esse servidor foi ligado no bootstrap dos workers:
-
-- `src/workers/ingest/main.py`;
-- `src/workers/query/main.py`.
-
-Também foram expostas portas diferentes no `docker-compose.yml`:
-
-- `9100` para `ingest-worker-doc`;
-- `9101` para `ingest-worker-chunk`;
-- `9102` para `query-worker`.
-
-Com isso, validamos que:
-
-- `http://localhost:9100/metrics` retorna métricas `rag_*`;
-- `http://localhost:9101/metrics` retorna métricas `rag_*`;
-- `http://localhost:9102/metrics` retorna métricas `rag_*`;
-- no Prometheus, os três workers aparecem como `UP`.
-
-## 5. Scripts operacionais criados
-
-Também foram criados scripts para facilitar a operação do sistema.
-
-O `scripts/seed_corpus.py` envia arquivos de uma pasta para o endpoint
-`POST /ingest`. Ele lê PDFs, Markdown e HTML, converte o conteúdo para base64 e
-registra quantos arquivos foram enviados e quantos falharam. Isso serve para
-popular o Qdrant de forma repetível.
-
-O `scripts/dlq_inspector.py` permite inspecionar filas de erro. Ele tem três
-comandos:
-
-- `list <queue.dlq>` para listar mensagens na DLQ;
-- `replay <queue.dlq> --limit N` para reenviar mensagens para a fila original;
-- `purge <queue.dlq> --yes` para limpar a DLQ.
-
-O `scripts/chaos_test.sh` e o `scripts/chaos_test.ps1` executam cenários simples
-de falha:
-
-- parar e religar o worker de chunks;
-- parar e religar o Ollama;
-- enviar uma rajada de queries concorrentes.
-
-Esses scripts ajudam a mostrar que o sistema não é só código feliz. Ele também
-tem ferramentas para observar e testar comportamento em falha.
-
-## 6. Corpus e avaliação
-
-Foi criado um corpus mínimo em `samples/corpus/` com documentos Markdown
-originais sobre engenharia de software, arquitetura distribuída, testes,
-observabilidade, padrões de projeto e RAG.
-
-Esse corpus não substitui um corpus grande de escala, como dezenas de PDFs, mas
-serve para validar o funcionamento local sem commitar arquivos pesados ou de
-terceiros.
-
-Também foi criado `data/eval_queries.jsonl` com 30 perguntas em português e
-inglês. Esse arquivo serve como base para testes de avaliação e experimentos.
-
-Na validação local, o seed enviou 6 documentos com `falhas=0`, e o Qdrant ficou
-com `points_count=6`.
-
-## 7. Tecnologias usadas
-
-Usei e validei as seguintes tecnologias:
-
-- **Python 3.12** para o código da aplicação e scripts.
-- **uv** para executar comandos no ambiente Python do projeto.
-- **FastAPI** no gateway e no rerank-service.
-- **aiohttp** para criar o servidor `/metrics` dos workers.
-- **RabbitMQ** para filas e DLQs.
-- **aio-pika** para acessar RabbitMQ nos scripts e workers.
-- **Qdrant** como banco vetorial.
-- **Redis** para cache e sessão.
-- **Ollama** para rodar modelos locais.
-- **Prometheus** para coletar métricas.
-- **Grafana** para visualizar métricas em dashboard.
-- **Loki/Promtail** para logs estruturados.
-- **Docker Compose** para subir a stack local.
-- **Tailscale** para conectar máquinas físicas em rede privada.
-
-## 8. O que foi validado na prática
-
-Nesta máquina, que agora é a máquina real prevista para rodar o worker, a stack
-subiu localmente com Docker Compose. Como ela tem GPU AMD e não NVIDIA, o
-serviço do Ollama falhou inicialmente por causa da reserva de GPU NVIDIA no
-Compose. Isso não era bug da aplicação. A solução local foi criar um
-`docker-compose.override.yml` ignorado pelo Git para remover a reserva de GPU
-apenas neste ambiente.
-
-Depois disso, os containers subiram, os modelos leves foram baixados, o seed do
-corpus funcionou e o smoke test passou.
-
-Também foi validado:
-
-- `ruff` sem erros;
-- `mypy` sem erros;
-- testes unitários com `62 passed`;
-- Prometheus com workers `UP`;
-- DLQ inspector listando `ingest.chunks.dlq`;
-- chaos test gerando evidência em `data/exp4/chaos.txt` e `data/b3-chaos.txt`.
-
-Depois do commit de fechamento, foi feita uma revisão extra das evidências
-locais. Nessa revisão, a stack ainda estava de pé, o Gateway respondeu
-`{"status":"ok"}`, o Prometheus estava pronto, o Loki respondeu `ready`, o
-Grafana mostrou o dashboard `RAG Distribuído` provisionado e o Qdrant manteve
-`points_count=6`.
-
-Também rodei novamente o smoke test local. A primeira tentativa demorou mais por
-causa do Ollama rodando em CPU e carregando o modelo local. Na segunda tentativa,
-com o modelo já carregado, o smoke terminou com `[smoke] OK`. Isso reforçou uma
-lição importante: em IA local, principalmente sem GPU NVIDIA, tempo de resposta
-alto nem sempre significa bug da aplicação. Às vezes é apenas o custo do modelo
-rodando no hardware disponível.
-
-Durante essa coleta apareceu um detalhe técnico nos logs: em uma tentativa, o
-worker recebeu a página da citação como texto `"null"` e o schema esperava um
-número inteiro. A mensagem foi reprocessada e depois respondeu com sucesso, mas
-isso virou um ponto de melhoria possível: normalizar valores como `null`, `"null"`
-ou `"n/a"` antes de montar a citação final.
-
-## 9. Sobre a `abdon-workstation` e o Tailscale
-
-Inicialmente, a documentação tratava a `abdon-workstation` como o host oficial
-da minha trilha. Na prática, ela não será usada para rodar o worker final. Ela
-servirá apenas como máquina de teste para validar o funcionamento do Tailscale.
-
-A máquina que realmente vai conectar ao ambiente distribuído e subir o worker é
-esta máquina atual. O Tailscale já foi instalado e esta máquina já entrou na
-tailnet; também já é possível enxergar as outras máquinas na rede. O que ainda
-falta é validar, com o Davi disponível, se esta máquina consegue acessar os
-serviços do PC1 pela tailnet:
-
-- RabbitMQ na porta `5672`;
-- Ollama na porta `11434`;
-- Qdrant na porta `6333`;
-- Redis na porta `6379`;
-- rerank-service na porta `8081`.
-
-## 10. O que eu aprendi
-
-O principal aprendizado foi entender que, em um sistema distribuído, fazer a
-funcionalidade funcionar não é suficiente. Também é preciso conseguir operar o
-sistema: ver métricas, testar falhas, popular dados, inspecionar filas e saber
-quando uma falha é do código ou do ambiente.
-
-Também aprendi que workers de fila são diferentes de serviços HTTP. Eles fazem
-trabalho em background, mas ainda precisam expor sinais para observabilidade. O
-endpoint `/metrics` nos workers foi importante justamente por isso: ele conectou
-o trabalho interno dos consumidores ao dashboard do Grafana.
-
-Outro aprendizado foi sobre ambiente local. O Compose principal estava preparado
-para GPU NVIDIA, mas esta máquina usa AMD. A falha do Ollama mostrou que nem
-toda falha de container é erro da aplicação. Às vezes é uma incompatibilidade
-entre a configuração de infraestrutura e o hardware disponível.
-
-Por fim, entendi melhor o papel do Tailscale. Ele não é parte da lógica de RAG,
-mas é o que permite transformar PCs separados em uma rede privada onde os
-workers conseguem acessar os serviços centrais com segurança.
-
-## 11. Próximos passos
-
-Os próximos passos não são mais de implementação principal no workspace. Eles
-são principalmente de ambiente:
-
-- confirmar/anotar o IP da tailnet;
-- validar conectividade com o PC1;
-- subir esta máquina como worker no modo distribuído;
-- usar a `abdon-workstation` apenas como teste simples de Tailscale;
-- se houver tempo, rodar experimentos com corpus maior.
-
-Com isso, minha parte deixa de ser só "escrever código" e passa a ser garantir
-que a máquina realmente participa do sistema distribuído.
-
-As evidências operacionais desta revisão ficaram registradas em
-`data/evidencias-operacionais-pablo.md`. Esse arquivo não substitui a validação
-com o PC1, mas ajuda a mostrar que a parte local estava funcionando de forma
-observável.
+A minha entrada no projeto foi no fechamento operacional, e o que ficou como aprendizado mais duradouro é a distinção entre fazer um sistema *funcionar* e conseguir *operá-lo*. O `/metrics` nos workers foi um caso pequeno mas exemplar: o pipeline já funcionava, mas o sistema era invisível para o Prometheus até esse endpoint existir. Os scripts de seed, DLQ inspector e chaos test pertencem à mesma família — não são funcionalidades para o usuário final, são alavancas para quem opera o sistema reagir a falhas, popular dados e medir comportamento. Em paralelo, a experiência com GPU AMD num projeto pensado para NVIDIA consolidou uma lição que eu sabia "no abstrato" mas confundia na prática: nem toda falha de container é bug da aplicação. Os próximos passos são de ambiente — confirmar o IP da tailnet, validar conectividade com o PC1, subir esta máquina como worker no modo distribuído. A partir daí, minha parte deixa de ser só "escrever código" e passa a garantir que esta máquina realmente participa do sistema.
