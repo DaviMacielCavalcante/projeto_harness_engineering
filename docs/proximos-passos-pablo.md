@@ -1,18 +1,20 @@
 # Proximos passos - Pablo
 
-Contexto atualizado em 2026-05-24 apos o pull que trouxe o commit `c4739bd`
-(`B3 Task 4 fechada - observabilidade + doc tecnico`).
+Contexto atualizado em 2026-05-25 depois da sessao Codex/Pablo.
+Este arquivo substitui a leitura antiga em que a `abdon-workstation` aparecia
+como worker final.
 
 ## Quem esta usando este contexto
 
 Voce e o Pablo. Este PC atual **nao** e a `abdon-workstation`; e uma maquina
 extra com AMD RX 7600 8 GB VRAM. A decisao operacional atual e usar **este PC**
-como a maquina que vai conectar ao ambiente distribuido e subir o worker. A
-`abdon-workstation` fica apenas como maquina de teste para validar Tailscale.
+como a maquina que vai conectar ao ambiente distribuido e subir o worker real.
+A `abdon-workstation` fica apenas como maquina de teste para validar que o
+Tailscale estava funcionando.
 
 ## Estado atualizado do projeto
 
-O pull mudou bastante a situacao:
+O pull inicial mudou bastante a situacao:
 
 - Observabilidade B3 Task 4 foi adicionada:
   - `infra/prometheus/prometheus.yml`
@@ -33,11 +35,13 @@ O que continua critico para a sua trilha:
 - `/metrics` nos workers foi implementado e validado no Prometheus com Docker saudavel.
 - este PC ja entrou no Tailscale e enxerga as maquinas da tailnet;
 - ainda falta validar acesso aos servicos do PC1 quando o Davi estiver disponivel;
-- `abdon-workstation` pode ser usada apenas como teste simples de Tailscale.
+- `abdon-workstation` nao deve ser usada como worker final; ela foi apenas teste simples de Tailscale.
 - O corpus minimo versionavel existe; o corpus de escala (~80 PDFs) ainda precisa
   ser curado/seedado fora do repo.
 - Scripts operacionais foram criados: `seed_corpus.py`, `dlq_inspector.py`,
   `chaos_test.sh` e `chaos_test.ps1`.
+- Evidencias locais de Prometheus, Grafana, Loki, workers, Qdrant e smoke
+  ficaram registradas em `data/evidencias-operacionais-pablo.md`.
 
 ## Seu PC atual
 
@@ -47,6 +51,7 @@ Este PC:
 - nao tem NVIDIA/CUDA;
 - nao deve ser tratado como PC1;
 - substitui a `abdon-workstation` como worker real da trilha do Pablo;
+- ja esta conectado ao Tailscale e enxerga as maquinas da tailnet;
 - deve ser usado para desenvolvimento, testes unitarios, documentacao e smoke
   leve com modelo pequeno.
 
@@ -119,6 +124,10 @@ real ao rodar `docker-compose --profile all up -d --build`.
 
 - [x] `uv` corrigido com cache local.
 - [x] `.env.local` criado para Modo 1 local.
+- [x] Tailscale instalado e conectado na tailnet.
+- [x] Maquinas da tailnet visiveis.
+- [ ] IP Tailscale deste PC anotado.
+- [ ] Acesso aos servicos do PC1 validado com Davi disponivel.
 - [x] Validar testes unitarios:
 
 ```powershell
@@ -152,6 +161,12 @@ docker exec rag-ollama ollama pull llama3.2:1b
 uv run python scripts/smoke_test.py
 ```
 
+- [x] Registrar evidencias locais:
+
+```text
+data/evidencias-operacionais-pablo.md
+```
+
 ## Suas prioridades tecnicas
 
 ### 1. B3 Task 3 - `/metrics` nos workers
@@ -178,10 +193,11 @@ Criterio de aceite:
 - `curl http://localhost:9102/metrics` retorna metricas `rag_*`.
 - Grafana comeca a popular throughput, latencia por fase, tokens e cache hit ratio apos smoke.
 
-### 2. Adicionar a maquina worker do Pablo via Tailscale
+### 2. Configurar este PC como worker real via Tailscale
 
 Decisao atual: este PC sera o worker real. A `abdon-workstation` sera usada
-apenas para teste de Tailscale.
+apenas como registro de teste simples de Tailscale; nao entra na topologia final
+como worker.
 
 - [x] Instalar Tailscale neste PC.
 - [x] Entrar na tailnet correta do trio.
@@ -334,16 +350,24 @@ UIs locais apos subir:
 - Grafana: `http://localhost:3000` (`admin`/`admin`)
 - Loki ready: `http://localhost:3100/ready`
 
-## Ordem recomendada para voce
+## Ordem recomendada a partir de agora
 
-1. Rodar testes unitarios neste PC.
-2. Tentar subir Compose local.
-3. Se Compose falhar por NVIDIA/Ollama, registrar erro e nao tratar como bug do app.
-4. Implementar `/metrics` nos workers.
-5. Validar workers no Prometheus.
-6. Criar `seed_corpus.py`.
-7. Criar `dlq_inspector.py`.
-8. Criar `chaos_test.sh`.
-9. Adicionar/configurar este PC no Tailscale como worker real.
-10. Escrever seu relatorio individual.
-11. Ajudar a revisar doc/slides/README/ENTREGA.
+1. Confirmar/anotar o IP Tailscale deste PC.
+2. Quando Davi estiver disponivel, testar acesso ao PC1 pelas portas:
+   - RabbitMQ `5672`
+   - Ollama `11434`
+   - Qdrant `6333`
+   - Redis `6379`
+   - Rerank `8081`
+3. Preencher as configs de Modo 2 conforme `infra/ansible/inventory.yml.example`.
+4. Subir este PC como worker real no ambiente distribuido.
+5. Rodar smoke/experimentos em Modo 2 completo.
+6. Se houver tempo, curar corpus maior fora do repo e repetir os experimentos B4.
+
+## Observacao tecnica da revisao documental
+
+Durante a coleta de evidencias, uma tentativa de smoke estourou timeout de 120s
+enquanto o Ollama carregava/rodava em CPU. A tentativa seguinte passou com
+`[smoke] OK`. Tambem apareceu nos logs uma falha recuperada em `Citation.page`
+quando a pagina veio como texto `"null"`. Nao e bloqueador imediato, mas vale
+investigar depois se sobrar tempo.

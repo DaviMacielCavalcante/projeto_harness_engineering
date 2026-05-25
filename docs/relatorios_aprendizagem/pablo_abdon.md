@@ -196,6 +196,25 @@ Também foi validado:
 - DLQ inspector listando `ingest.chunks.dlq`;
 - chaos test gerando evidência em `data/exp4/chaos.txt` e `data/b3-chaos.txt`.
 
+Depois do commit de fechamento, foi feita uma revisão extra das evidências
+locais. Nessa revisão, a stack ainda estava de pé, o Gateway respondeu
+`{"status":"ok"}`, o Prometheus estava pronto, o Loki respondeu `ready`, o
+Grafana mostrou o dashboard `RAG Distribuído` provisionado e o Qdrant manteve
+`points_count=6`.
+
+Também rodei novamente o smoke test local. A primeira tentativa demorou mais por
+causa do Ollama rodando em CPU e carregando o modelo local. Na segunda tentativa,
+com o modelo já carregado, o smoke terminou com `[smoke] OK`. Isso reforçou uma
+lição importante: em IA local, principalmente sem GPU NVIDIA, tempo de resposta
+alto nem sempre significa bug da aplicação. Às vezes é apenas o custo do modelo
+rodando no hardware disponível.
+
+Durante essa coleta apareceu um detalhe técnico nos logs: em uma tentativa, o
+worker recebeu a página da citação como texto `"null"` e o schema esperava um
+número inteiro. A mensagem foi reprocessada e depois respondeu com sucesso, mas
+isso virou um ponto de melhoria possível: normalizar valores como `null`, `"null"`
+ou `"n/a"` antes de montar a citação final.
+
 ## 9. Sobre a `abdon-workstation` e o Tailscale
 
 Inicialmente, a documentação tratava a `abdon-workstation` como o host oficial
@@ -248,3 +267,8 @@ são principalmente de ambiente:
 
 Com isso, minha parte deixa de ser só "escrever código" e passa a ser garantir
 que a máquina realmente participa do sistema distribuído.
+
+As evidências operacionais desta revisão ficaram registradas em
+`data/evidencias-operacionais-pablo.md`. Esse arquivo não substitui a validação
+com o PC1, mas ajuda a mostrar que a parte local estava funcionando de forma
+observável.

@@ -61,10 +61,11 @@
 - [x] `http://localhost:15692/metrics` — plugin RabbitMQ ativo (confirmado indiretamente: target `rabbitmq` UP no Prometheus)
 - [x] `http://localhost:3000` (admin/admin) — Dashboards → "RAG Distribuído" disponível
 - [x] (opcional) Rodar `uv run python scripts/smoke_test.py` 2-3 vezes pra gerar tráfego suficiente nos painéis que dependem do gateway (`rag_request_duration_seconds`, `rag_errors_total{service="gateway"}`)
-- [ ] (opcional) `http://localhost:3100/ready` — Loki ready (confirmar)
+- [x] (opcional) `http://localhost:3100/ready` — Loki ready confirmado em 2026-05-25
 - [ ] (opcional) `http://localhost:3000/explore` com datasource Loki → `{service="gateway"}` devolve logs do gateway em JSON
 
 ### 3.2 Capturar evidência de observabilidade pro doc técnico
+- [x] Evidência textual local de Prometheus/Grafana/Loki/workers/smoke → `data/evidencias-operacionais-pablo.md`
 - [ ] Screenshot do dashboard Grafana populado → `data/grafana-rag-distribuido.png`
 - [ ] Screenshot do `/targets` do Prometheus → `data/prometheus-targets.png`
 - [ ] (Opcional) Screenshot do Explore do Loki filtrado por `correlation_id` → `data/loki-correlation.png`

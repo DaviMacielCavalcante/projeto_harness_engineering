@@ -246,6 +246,18 @@ operacional deixado para a proxima sessao.
   - `uv run ruff check src tests scripts`
   - `uv run mypy src tests scripts`
   - `uv run pytest tests/unit -q` com 62 testes passando.
+- Revisao documental posterior coletou evidencias locais em
+  `data/evidencias-operacionais-pablo.md`:
+  - Prometheus targets `up` para gateway, prometheus, rabbitmq,
+    rerank-service e workers.
+  - Grafana com dashboard `RAG Distribuido` provisionado.
+  - Loki `ready`.
+  - Gateway `/health` OK.
+  - Qdrant `se_corpus` com `points_count=6`.
+  - Smoke local encerrando com `[smoke] OK`.
+- Durante essa coleta, apareceu uma falha recuperada em `Citation.page` quando
+  o valor de pagina veio como string `"null"`. Nao bloqueou o smoke final, mas
+  fica como ponto tecnico de melhoria.
 
 ### Estado especifico do Tailscale e maquinas
 

@@ -42,6 +42,9 @@ Entrega do Tema 5 - RAG Distribuído.
 - [x] Type-check `mypy`.
 - [x] Smoke local com stack saudável.
 - [x] Prometheus targets com workers `UP`.
+- [x] Grafana com dashboard `RAG Distribuído` provisionado.
+- [x] Loki `ready` confirmado localmente.
+- [x] Evidências textuais registradas em `data/evidencias-operacionais-pablo.md`.
 - [x] Chaos test executado e registrado.
 
 ## Pendências externas
