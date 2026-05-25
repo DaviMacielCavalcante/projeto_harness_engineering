@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     # Observabilidade
     log_level: str = "INFO"
     service_name: str = "unset"
+    worker_metrics_port: int = 9100
 
     # Worker de ingestão
     # "documents" → só consome ingest.documents (parse + chunk + publish)

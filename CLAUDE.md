@@ -169,3 +169,111 @@ Independente da granularidade, a fronteira do `code-partner` não muda: pseudoc�
 - **GPU é só do PC1** (autor). PC2/PC3 não rodam Ollama de fato; chamam o do PC1. Para dev local nesses PCs, use `llama3.2:1b` em CPU ou um stub HTTP determinístico.
 - **Bônus +10 pts**: experimento Ollama vs vLLM no final (B4, Exp 3). Condicional ao cronograma — primeiro item da lista de cortes do spec.
 - **Prazo apertado**: 16 dias corridos (09/05 → 25/05). Se atrasar, cortar nesta ordem: Exp 3 (vLLM) → Loki → Streamlit demo → memória de sessão → Terraform.
+
+## Handoff Codex - Pablo Abdon - 2026-05-25
+
+Esta secao foi registrada explicitamente por Codex a partir de comandos e
+orientacoes de Pablo Abdon. Ela resume o que Codex fez no repositorio e o estado
+operacional deixado para a proxima sessao.
+
+### Contexto de autoria
+
+- Pablo pediu para continuar a partir de `docs/proximos-passos-pablo.md`.
+- Codex analisou o projeto, especialmente `docs/`, e executou as tarefas locais
+  possiveis no workspace.
+- As alteracoes abaixo foram feitas por Codex sob direcao de Pablo; Pablo deve
+  revisar e assumir o conteudo final antes da entrega.
+
+### Implementacoes feitas por Codex
+
+- Implementado `/metrics` nos workers com
+  `src/shared/workers_metrics_server.py`, usando `aiohttp` e
+  `metrics_response()` de `src/shared/metrics.py`.
+- Integrado o servidor de metricas nos bootstraps:
+  - `src/workers/ingest/main.py`
+  - `src/workers/query/main.py`
+- Adicionada configuracao `worker_metrics_port` em `src/shared/config.py`.
+- Expostas portas dos workers no `docker-compose.yml`:
+  - `ingest-worker-doc`: host `9100`
+  - `ingest-worker-chunk`: host `9101`
+  - `query-worker`: host `9102`
+- Criados testes unitarios para o servidor de metricas em
+  `tests/unit/test_workers_metrics_server.py`.
+- Ajustados ids longos em `tests/unit/test_chunking.py`.
+
+### Scripts e dados criados por Codex
+
+- `scripts/seed_corpus.py`: envia arquivos de corpus para `POST /ingest`.
+- `scripts/dlq_inspector.py`: lista, replaya e purga DLQs do RabbitMQ.
+- `scripts/chaos_test.sh`: cenarios de chaos test para ambiente Unix.
+- `scripts/chaos_test.ps1`: versao PowerShell usada neste PC.
+- `samples/corpus/`: corpus minimo versionavel com arquivos Markdown.
+- `data/eval_queries.jsonl`: conjunto inicial com 30 queries de avaliacao.
+
+### Documentacao criada ou atualizada por Codex
+
+- `docs/proximos-passos-pablo.md`: atualizado com checklist real do Pablo.
+- `docs/relatorios_aprendizagem/pablo_abdon.md`: reescrito como resumo
+  teorico e didatico do projeto, incluindo RAG, workers, mensageria,
+  observabilidade, tecnologias usadas e papel da trilha do Pablo.
+- `docs/decisoes.md`: decisoes tecnicas relevantes.
+- `docs/prompts.md`: resumo dos prompts/versionamento.
+- `docs/slides/slides.md` e `docs/slides/slides.pdf`: slides de apresentacao.
+- `ENTREGA.md`: checklist final de entrega.
+- `PENDENCIAS_FINAIS.md`, `README.md` e `TODO.md`: atualizados para refletir o
+  estado real da entrega.
+
+### Validacoes executadas por Codex
+
+- Stack Docker local subiu com `docker-compose --profile all up -d --no-build`
+  depois de criar override local para remover a reserva NVIDIA no Ollama.
+- Modelos baixados no Ollama local:
+  - `nomic-embed-text`
+  - `llama3.2:1b`
+- Endpoints de metricas dos workers responderam com metricas `rag_*`:
+  - `http://localhost:9100/metrics`
+  - `http://localhost:9101/metrics`
+  - `http://localhost:9102/metrics`
+- Prometheus mostrou gateway, RabbitMQ, rerank-service e workers como `UP`.
+- `scripts/seed_corpus.py --corpus samples/corpus` enviou 6 arquivos, sem
+  falhas.
+- Qdrant ficou com `points_count=6`.
+- Smoke test ponta a ponta passou com documento Markdown e pergunta sobre RAG.
+- `scripts/dlq_inspector.py list ingest.chunks.dlq` mostrou DLQ vazia.
+- `scripts/chaos_test.ps1` rodou cenarios de parada/reinicio e burst de queries,
+  gravando saidas em `data/exp4/chaos.txt` e `data/b3-chaos.txt`.
+- Checagens finais passaram:
+  - `uv run ruff check src tests scripts`
+  - `uv run mypy src tests scripts`
+  - `uv run pytest tests/unit -q` com 62 testes passando.
+
+### Estado especifico do Tailscale e maquinas
+
+- Pablo informou depois que instalou o Tailscale neste PC e conectou na tailnet.
+- Pablo tambem informou que consegue enxergar as maquinas na tailnet.
+- O Davi nao estava disponivel no momento, entao ainda nao foi possivel testar o
+  acesso real aos servicos do PC1.
+- A `abdon-workstation` nao sera a maquina final do worker; ela fica apenas como
+  teste simples de Tailscale.
+- A maquina atual do Pablo e a maquina que deve conectar ao ambiente distribuido
+  e subir o worker real.
+
+### Pendencias restantes
+
+- Confirmar/anotar o IP Tailscale `100.x.y.z` desta maquina.
+- Validar, com Davi disponivel, acesso desta maquina ao PC1:
+  - RabbitMQ `5672`
+  - Ollama `11434`
+  - Qdrant `6333`
+  - Redis `6379`
+  - Rerank `8081`
+- Preencher/ajustar configs de Modo 2 conforme `infra/ansible/inventory.yml.example`.
+- Subir esta maquina como worker no modo distribuido.
+- Se houver tempo, curar corpus maior fora do repo e rodar experimentos B4 em
+  Modo 2 completo.
+
+### Nota local importante
+
+- `docker-compose.override.yml` foi criado localmente para este PC AMD/WSL,
+  removendo a reserva NVIDIA do servico `ollama`.
+- Esse override e intencionalmente local e ignorado pelo Git.

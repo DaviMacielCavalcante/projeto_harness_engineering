@@ -28,6 +28,7 @@ from src.shared.config import settings
 from src.shared.logging import configure_logging
 from src.shared.messaging import connect, consume_forever
 from src.shared.ollama_client import OllamaClient
+from src.shared.workers_metrics_server import start_metrics_server
 from src.workers.ingest.chunk_handler import ensure_qdrant_collection, handle_chunk
 from src.workers.ingest.document_handler import handle_document
 
@@ -39,6 +40,8 @@ async def main() -> None:
     """Conecta dependências conforme o role e consome as filas atribuídas."""
     role = settings.ingest_role
     log.info("ingest-worker.starting", role=role, host=HOSTNAME)
+    _metrics_runner = await start_metrics_server(port=settings.worker_metrics_port)
+    log.info("ingest-worker.metrics_ready", port=settings.worker_metrics_port)
 
     async with connect(settings.rabbitmq_url) as conn:
         tasks: list[asyncio.Task[None]] = []

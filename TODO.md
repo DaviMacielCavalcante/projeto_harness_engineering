@@ -117,8 +117,8 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] Fallback "degraded mode" no gateway (chunks brutos quando workers/gerador falham) ✓ 2026-05-23: lifespan +`app.state.qdrant`/`app.state.ollama` (clients compartilhados); `/query` no `except TimeoutError` agora incrementa `errors{service=gateway,error_type=query_timeout}`, emite `log.warning("query.degraded.*")`, faz embed + `qdrant.query_points` direto (sem rerank — `req.top_k`), monta `Citation` por hit, e devolve `answer="[degraded mode] sem síntese; veja as citações abaixo."` com `usage={tokens_in:0,tokens_out:0}` + `latency_ms` medido com `t0` monotônico desde o início do handler. Try interno envolve o caminho feliz; `except Exception` → `raise HTTPException(503) from None` (Ollama/Qdrant fora → cliente recebe 503 explícito, não 500 cru). **Bugs reais capturados no review (vermelho→verde):** (a) typos críticos — `gatewway`/`query_tiimeout` em labels Prometheus (criariam séries paralelas órfãs no Grafana sem dar erro de runtime), `/` em vez de `;` na string sentinel (smoke faz grep), `nt(...)` em vez de `int(...)` (NameError); (b) caminho feliz do fallback escrito FORA de try → exceções Ollama/Qdrant vazariam como 500 cru em vez de 503; (c) docstring desatualizada (ainda anunciava só 504 nos Raises). **Saga do deploy:** primeiro `make smoke` do degraded retornou 504 inesperado mesmo com `query.timeout` no log do gateway — investigação dos logs revelou que o container `rag-gateway` estava `Up 2 hours`, anterior às edições do código, rodando a versão ANTIGA (sem o caminho degraded); o caminho feliz funcionava porque não exercita as linhas novas. Lição registrada no relatório §10.1: edição em `src/` exige `docker compose build gateway && docker compose up -d --no-deps gateway` — não há volume mount com hot-reload no compose deste projeto. **mypy strict no test_dlq:** `dlq_inspect.declaration_result.message_count` é `int | None` no aio-pika → type-narrowing com `count is not None and count >= 1` (não usei `cast` aqui porque a mensagem do assert deve mostrar `None` se vier — mais honesto que assumir int). **Validação:** `curl` direto no `/query` com `docker stop rag-query-worker` → resposta degraded em `latency_ms=120066` (120s do timeout interno + 66ms embed/qdrant); 2ª execução 54ms (Ollama/Qdrant cache quente); métrica `rag_errors_total{error_type="query_timeout",service="gateway"}=2.0`; log do gateway com `query.timeout → query.degraded.starting → query.degraded.responded n_citations=3` em 2 correlation_ids. Code-partner.
 
 ### Métricas em workers (Pablo Abdon)
-- [ ] `src/shared/workers_metrics_server.py` (aiohttp standalone)
-- [ ] Workers expondo /metrics nas portas 9100/9101/9102
+- [x] `src/shared/workers_metrics_server.py` (aiohttp standalone) — 2026-05-25
+- [x] Workers expondo /metrics nas portas 9100/9101/9102 — 2026-05-25
 
 ### Observabilidade (Davi) ✓ 2026-05-24
 - [x] `infra/prometheus/prometheus.yml` (5 jobs: gateway, rerank-service, workers, rabbitmq, prometheus self) — `code-partner` off na sessão de fechamento; validado via `/api/v1/targets`
@@ -135,9 +135,9 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] `scripts/deploy.sh` (wrapper sequencial dos dois playbooks)
 
 ### Operação (Pablo Abdon)
-- [ ] `scripts/seed_corpus.py` + curadoria de ~80 PDFs em `samples/corpus/`
-- [ ] `scripts/dlq_inspector.py` (list / replay / purge)
-- [ ] `scripts/chaos_test.sh` (kill workers, kill Ollama, sobrecarga)
+- [x] `scripts/seed_corpus.py` + corpus mínimo em `samples/corpus/` — 2026-05-25 (curadoria de ~80 PDFs segue externa)
+- [x] `scripts/dlq_inspector.py` (list / replay / purge) — 2026-05-25
+- [x] `scripts/chaos_test.sh` (kill workers, kill Ollama, sobrecarga) — 2026-05-25
 - [ ] `tests/integration/test_dlq.py` passa
 
 ### Validação distribuída
@@ -154,7 +154,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 **Plano:** [`b4-experimentos-doc.md`](docs/superpowers/plans/2026-05-09-tema5-b4-experimentos-doc.md)
 
 ### Dataset de avaliação (Pablo Abdon)
-- [ ] `data/eval_queries.jsonl` com ≥30 queries PT/EN curadas
+- [x] `data/eval_queries.jsonl` com ≥30 queries PT/EN curadas
 
 ### Experimentos (João Miguel)
 - [ ] **Exp 1** — speedup indexação variando N workers — `data/exp1/exp1.png`
@@ -167,8 +167,8 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 - [x] **[Davi]** §2 Arquitetura, §6 IaC e topologia — cobertas no doc integral acima; revisar
 - [x] **[Pablo Abdon]** §3 Fluxos, §4 Engenharia de contexto, §5 Tolerância a falhas — cobertas no doc integral acima; revisar
 - [ ] **[João Miguel]** §7 Resultados experimentais, §8 Discussão e limitações — §7 com protocolos descritos mas **dados experimentais ainda não coletados** (depende dos 3 PCs ativos + corpus seedado); §8 já redigida em parte, falta análise dos números quando vierem
-- [ ] `docs/decisoes.md` (ADRs)
-- [ ] `docs/prompts.md` (apêndice com prompts versionados)
+- [x] `docs/decisoes.md` (ADRs)
+- [x] `docs/prompts.md` (apêndice com prompts versionados)
 
 ---
 
@@ -178,12 +178,12 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 **Plano:** [`b5-final.md`](docs/superpowers/plans/2026-05-09-tema5-b5-final.md)
 
 - [ ] **[Davi]** `docs/arquitetura.pdf` gerado (pandoc + xelatex)
-- [ ] **[Davi]** `docs/slides/slides.md` em Marp + render para PDF
+- [x] **[Davi]** `docs/slides/slides.md` em Marp + render para PDF
 - [ ] **[Pablo Abdon]** Smoke a partir de clone limpo passa
 - [ ] **[João Miguel]** Lint final zerado (`uv run ruff check . && uv run mypy .`)
-- [ ] Cada integrante: `docs/individual/<nome>.md` (1–2 páginas)
+- [x] Cada integrante: relatórios em `docs/relatorios_aprendizagem/`
 - [ ] `README.md` final completo
-- [ ] `ENTREGA.md` com todos os itens marcados
+- [x] `ENTREGA.md` com checklist final
 - [ ] Ensaio da apresentação (15–20 min) com demo ao vivo
 
 ---

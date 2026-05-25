@@ -13,6 +13,8 @@ Sistema de Q&A com **Retrieval-Augmented Generation** distribuído entre 3 PCs f
 | **Documento técnico** (entregável 8.2) | [`docs/arquitetura.md`](docs/arquitetura.md) — 9 seções + 3 diagramas + apêndices |
 | **Diagramas** (componentes, sequência ingestão, sequência query) | [`docs/diagrams/`](docs/diagrams/) — sources `.mmd` + PNGs renderizados |
 | **Guia de observabilidade** (métricas, dashboards, queries) | [`docs/observabilidade.md`](docs/observabilidade.md) — catálogo das 11 métricas + PromQL/LogQL prontos |
+| **Decisões e prompts** | [`docs/decisoes.md`](docs/decisoes.md), [`docs/prompts.md`](docs/prompts.md) |
+| **Slides e checklist final** | [`docs/slides/slides.md`](docs/slides/slides.md), [`ENTREGA.md`](ENTREGA.md) |
 | **Declaração de uso de IA** (Extra) | [`docs/USO_DE_IA.md`](docs/USO_DE_IA.md) — política, fronteiras, entradas datadas |
 | **Relatórios de aprendizagem** (entregável 8.4) | [`docs/relatorios_aprendizagem/`](docs/relatorios_aprendizagem/) — um arquivo por integrante |
 | **Runbooks operacionais** | [`docs/setup-tailscale.md`](docs/setup-tailscale.md), [`docs/setup-gpu-pc1.md`](docs/setup-gpu-pc1.md) |
@@ -26,7 +28,7 @@ Sistema de Q&A com **Retrieval-Augmented Generation** distribuído entre 3 PCs f
 |---|---|
 | **B1 — Setup e pipeline mínimo** | ✓ fechado (smoke: 122 chunks indexados, query ~2.1s, 3 citações) |
 | **B2 — Pipeline completo** | ✓ fechado (smoke estendido: cache L2, sessão, /metrics, rerank — `data/b2-smoke.txt`); function calling cabeado com ressalva documentada (§8.1 do doc técnico) |
-| **B3 — Tolerância a falhas + IaC + Modo 2** | ✓ Tasks 1, 2, 4, 5, 6 fechadas (DLX/DLQ, degraded mode, observabilidade, Terraform, Ansible). Pendente: Task 3 (workers `/metrics`, Pablo) e Modo 2 distribuído completo (depende de `abdon-workstation` no Tailscale) |
+| **B3 — Tolerância a falhas + IaC + Modo 2** | ✓ Tasks 1, 2, 3, 4, 5, 6 fechadas (DLX/DLQ, degraded mode, workers `/metrics`, observabilidade, Terraform, Ansible). Pendente: Modo 2 distribuído completo (depende de `abdon-workstation` no Tailscale) |
 | **B4 — Experimentos + doc técnico** | Doc técnico redigido; experimentos Exp 1/2/4 pendentes (corpus + Modo 2). Exp 3 (vLLM) cortado por cronograma |
 | **B5 — Finalização** | PDF do doc técnico, slides, ensaio — 24h restantes |
 
@@ -98,6 +100,14 @@ RUN_INTEGRATION=1 uv run pytest        # inclui integration tests (precisam de s
 uv run ruff check --fix .              # lint + auto-fix
 uv run ruff format .                   # format
 uv run mypy .                          # type-check strict
+```
+
+Scripts operacionais:
+
+```bash
+uv run python scripts/seed_corpus.py --corpus samples/corpus
+uv run python scripts/dlq_inspector.py list ingest.chunks.dlq
+bash scripts/chaos_test.sh
 ```
 
 ## Estrutura

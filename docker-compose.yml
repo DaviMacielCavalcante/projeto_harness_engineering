@@ -122,6 +122,8 @@ services:
     <<: *worker-base
     container_name: rag-ingest-worker-doc
     profiles: ["all", "worker"]
+    ports:
+      - 9100:9100
     environment:
       WORKER_KIND: ingest
       INGEST_ROLE: documents
@@ -131,6 +133,8 @@ services:
     <<: *worker-base
     container_name: rag-ingest-worker-chunk
     profiles: ["all", "worker"]
+    ports:
+      - 9101:9100
     environment:
       WORKER_KIND: ingest
       INGEST_ROLE: chunks
@@ -140,6 +144,8 @@ services:
     <<: *worker-base
     container_name: rag-query-worker
     profiles: ["all", "worker"]
+    ports:
+      - 9102:9100
     environment:
       WORKER_KIND: query
       SERVICE_NAME: query-worker

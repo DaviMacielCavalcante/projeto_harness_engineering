@@ -1,32 +1,37 @@
 # Pendências finais — fechamento do projeto
 
 > Snapshot da sessão de **2026-05-24**. Entrega: **25/05**. A maioria depende do
-> Pablo Abdon terminar a trilha dele (Task 3 do B3 + `abdon-workstation` no
-> Tailscale + corpus seedado) antes que o Modo 2 distribuído suba.
+> Pablo Abdon terminar a trilha externa dele (este PC no Tailscale como worker
+> real) antes que o Modo 2 distribuído suba. A `abdon-workstation` fica apenas
+> como teste simples de Tailscale. A Task 3 do B3 e o corpus mínimo local foram
+> destravados em 2026-05-25.
 
 ---
 
 ## 1. Bloqueado por Pablo Abdon (não consigo destravar sozinho)
 
 ### 1.1 Task 3 do B3 — `/metrics` em workers
-- [ ] `src/shared/workers_metrics_server.py` (aiohttp standalone) entregue.
-- [ ] Workers (`ingest-worker-doc`, `ingest-worker-chunk`, `query-worker`) expondo `/metrics` na porta 9100.
-- **Consequência sem isso:** o job `workers` em `infra/prometheus/prometheus.yml` fica `DOWN` no `/targets`. O painel **Throughput** do dashboard só mostra dados do gateway (que não incrementa `rag_throughput_*`); o painel **Latência por fase** fica vazio (a métrica `rag_query_pipeline_duration_seconds` é incrementada no `query-worker`).
+- [x] `src/shared/workers_metrics_server.py` (aiohttp standalone) entregue.
+- [x] Workers (`ingest-worker-doc`, `ingest-worker-chunk`, `query-worker`) expondo `/metrics` na porta 9100.
+- **Validação:** o job `workers` em `infra/prometheus/prometheus.yml` saiu de `DOWN`; `ingest-worker-doc`, `ingest-worker-chunk` e `query-worker` aparecem `UP` no `/targets`.
 
-### 1.2 `abdon-workstation` no Tailscale
-- [ ] PC3 (`abdon-workstation`) conectado à tailnet do trio.
-- [ ] Docker + Docker Compose instalados.
-- [ ] `uv sync` rodando.
-- **Consequência sem isso:** Modo 2 fica em 2 PCs em vez de 3. Os experimentos do B4 que variam N workers (Exp 1, Exp 2) perdem um ponto da curva.
+### 1.2 Este PC no Tailscale como worker real
+- [x] Este PC conectado à tailnet do trio.
+- [x] Tailscale instalado e conectado neste PC; máquinas visíveis na tailnet.
+- [x] Docker + Docker Compose instalados.
+- [x] `uv sync` rodando.
+- [ ] Acesso ao PC1 via Tailscale validado.
+- [ ] Aguardar Davi estar disponível para testar portas do PC1.
+- **Consequência sem isso:** Modo 2 fica sem o worker externo do Pablo. Os experimentos do B4 que variam N workers (Exp 1, Exp 2) perdem um ponto da curva.
 
 ### 1.3 Corpus seedado
-- [ ] `scripts/seed_corpus.py` entregue.
+- [x] `scripts/seed_corpus.py` entregue.
 - [ ] `samples/corpus/` curado com ~80 PDFs.
 - **Consequência sem isso:** experimentos B4 sem corpus de escala suficiente; o smoke continua rodando com 1 PDF do B1.
 
 ### 1.4 Chaos test + DLQ inspector
-- [ ] `scripts/chaos_test.sh` (kill workers, kill Ollama, sobrecarga).
-- [ ] `scripts/dlq_inspector.py` (list / replay / purge).
+- [x] `scripts/chaos_test.sh` (kill workers, kill Ollama, sobrecarga).
+- [x] `scripts/dlq_inspector.py` (list / replay / purge).
 - **Consequência sem isso:** Exp 4 (chaos test) não rodável; gestão das DLQs fica manual via `rabbitmqctl`.
 
 ---
@@ -34,7 +39,7 @@
 ## 2. Bloqueado pela trilha do João Miguel (B4 — experimentos)
 
 ### 2.1 Dataset de avaliação
-- [ ] `data/eval_queries.jsonl` com ≥30 queries PT/EN curadas.
+- [x] `data/eval_queries.jsonl` com ≥30 queries PT/EN curadas.
 
 ### 2.2 Experimentos
 - [ ] **Exp 1** — speedup indexação × N chunk-workers → `data/exp1/exp1.png`
@@ -52,10 +57,10 @@
 
 ### 3.1 Rebuild + validar a observabilidade que entreguei hoje ✓ 2026-05-24
 - [x] `make down -v && make dev && sleep 30`
-- [x] `http://localhost:9090/targets` — gateway, prometheus, rabbitmq, rerank-service `UP`; 3 targets do job `workers` `DOWN` com `dial tcp :9100: connect: connection refused` (esperado, depende do 1.1)
+- [x] `http://localhost:9090/targets` — gateway, prometheus, rabbitmq, rerank-service e 3 targets do job `workers` `UP`
 - [x] `http://localhost:15692/metrics` — plugin RabbitMQ ativo (confirmado indiretamente: target `rabbitmq` UP no Prometheus)
 - [x] `http://localhost:3000` (admin/admin) — Dashboards → "RAG Distribuído" disponível
-- [ ] (opcional) Rodar `uv run python scripts/smoke_test.py` 2-3 vezes pra gerar tráfego suficiente nos painéis que dependem do gateway (`rag_request_duration_seconds`, `rag_errors_total{service="gateway"}`); painéis 1/2/3/5 e parte do 4 ficam sem dados até a Task 3 do Pablo destravar
+- [x] (opcional) Rodar `uv run python scripts/smoke_test.py` 2-3 vezes pra gerar tráfego suficiente nos painéis que dependem do gateway (`rag_request_duration_seconds`, `rag_errors_total{service="gateway"}`)
 - [ ] (opcional) `http://localhost:3100/ready` — Loki ready (confirmar)
 - [ ] (opcional) `http://localhost:3000/explore` com datasource Loki → `{service="gateway"}` devolve logs do gateway em JSON
 
@@ -81,21 +86,21 @@
 - [ ] Validar paginação (8–15 pp), correção dos diagramas renderizados, encoding UTF-8
 
 ### 3.6 Slides + apresentação (B5)
-- [ ] `docs/slides/slides.md` em formato Marp
-- [ ] Render para PDF: `marp docs/slides/slides.md -o docs/slides/slides.pdf`
+- [x] `docs/slides/slides.md` em formato Marp
+- [x] Render para PDF: `marp docs/slides/slides.md -o docs/slides/slides.pdf`
 - [ ] Ensaio (15-20 min) com demo ao vivo (`make smoke` no Modo 1 ou Modo 2)
 
 ### 3.7 Misc (B5)
 - [ ] `README.md` final — atualizar se necessário
-- [ ] `ENTREGA.md` — checklist final dos 4 entregáveis (8.1, 8.2, 8.3, 8.4 + Extra)
-- [ ] Pablo Abdon: relatório individual `docs/relatorios_aprendizagem/pablo_abdon.md` (entregável 8.4 dele) — eu não posso escrever pelo Pablo
+- [x] `ENTREGA.md` — checklist final dos 4 entregáveis (8.1, 8.2, 8.3, 8.4 + Extra)
+- [x] Pablo Abdon: relatório individual `docs/relatorios_aprendizagem/pablo_abdon.md` (entregável 8.4 dele)
 
 ---
 
 ## 4. Ordem sugerida quando o Pablo destravar
 
-1. **Pablo termina Task 3** (`workers_metrics_server.py`) e dá `make down -v && make dev`.
-2. **Eu valido o dashboard** com workers populando as métricas (3.1).
+1. **Pablo valida este PC** no Tailscale como worker real; a `abdon-workstation` fica apenas como teste simples de Tailscale.
+2. **Eu valido o dashboard** com workers populando as métricas (3.1) no host distribuído.
 3. **Capturo as evidências** de observabilidade (3.2) — só fazem sentido com tráfego real dos workers.
 4. **João Miguel roda os experimentos** Exp 1/2/4 contra Modo 2 completo (depende do 1.2 + 1.3).
 5. **João Miguel preenche §7 e §8** do doc técnico com os gráficos.

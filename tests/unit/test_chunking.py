@@ -68,9 +68,9 @@ def test_chunk_text_no_chunk_exceeds_target_significantly() -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "x" * 60_000,  # zero separadores → força hard-split
-        "palavra" * 9_000,  # sem espaço/pontuação utilizável
-        ("a" * 12_000) + "\n\n" + ("b" * 12_000),  # \n\n esparso, peças gigantes
+        pytest.param("x" * 60_000, id="sem-separadores"),
+        pytest.param("palavra" * 9_000, id="palavra-colada"),
+        pytest.param(("a" * 12_000) + "\n\n" + ("b" * 12_000), id="paragrafos-gigantes"),
     ],
 )
 def test_chunk_text_garante_teto_pos_overlap(text: str) -> None:

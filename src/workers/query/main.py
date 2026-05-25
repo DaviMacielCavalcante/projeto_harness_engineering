@@ -44,6 +44,7 @@ from src.shared.metrics import (
 from src.shared.ollama_client import OllamaClient
 from src.shared.schemas import Citation, QueryRequestMessage, QueryResponse
 from src.shared.session import SessionStore
+from src.shared.workers_metrics_server import start_metrics_server
 from src.workers.query.prompt_builder import ContextBlock, build_messages
 from src.workers.query.reranker_client import RerankerClient
 
@@ -411,6 +412,8 @@ async def main() -> None:
     sessions = SessionStore(client=redis_client)
     cite_tool = load_cite_source_tool()
 
+    _metrics_runner = await start_metrics_server(port=settings.worker_metrics_port)
+    log.info("query-worker.metrics_ready", port=settings.worker_metrics_port)
     log.info("query-worker.ready", queue=settings.queue_query_requests)
 
     async with connect(settings.rabbitmq_url) as conn:

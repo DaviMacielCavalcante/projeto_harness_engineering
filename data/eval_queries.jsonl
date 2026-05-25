@@ -1,0 +1,30 @@
+{"id":"q001","lang":"pt","question":"O que é arquitetura de software?","expected_topics":["arquitetura","componentes","decisões estruturais"]}
+{"id":"q002","lang":"pt","question":"Por que observabilidade é importante em sistemas distribuídos?","expected_topics":["observabilidade","falhas","serviços"]}
+{"id":"q003","lang":"pt","question":"Explique o padrão Strategy em poucas palavras.","expected_topics":["strategy","algoritmos","tempo de execução"]}
+{"id":"q004","lang":"pt","question":"Quando usar Adapter?","expected_topics":["adapter","interfaces incompatíveis"]}
+{"id":"q005","lang":"pt","question":"Qual é o papel de testes unitários?","expected_topics":["testes unitários","regras locais"]}
+{"id":"q006","lang":"pt","question":"Qual é o papel de testes de integração?","expected_topics":["integração","contratos","serviços"]}
+{"id":"q007","lang":"pt","question":"O que um smoke test valida?","expected_topics":["ponta a ponta","ambiente real"]}
+{"id":"q008","lang":"pt","question":"Como RAG reduz alucinação?","expected_topics":["corpus","contexto","citações"]}
+{"id":"q009","lang":"pt","question":"Por que chunking coerente importa em RAG?","expected_topics":["chunking","trechos","contexto"]}
+{"id":"q010","lang":"pt","question":"O que é re-ranking em um pipeline RAG?","expected_topics":["re-ranking","candidatos","relevância"]}
+{"id":"q011","lang":"pt","question":"Por que citações rastreáveis são necessárias?","expected_topics":["citações","rastreabilidade","fonte"]}
+{"id":"q012","lang":"pt","question":"Quais dimensões compõem qualidade de software?","expected_topics":["corretude","manutenibilidade","desempenho","segurança"]}
+{"id":"q013","lang":"pt","question":"Como serviços distribuídos devem lidar com falhas?","expected_topics":["tolerância a falhas","isolamento","observabilidade"]}
+{"id":"q014","lang":"pt","question":"O que significa isolar responsabilidades entre componentes?","expected_topics":["componentes","responsabilidades","contratos"]}
+{"id":"q015","lang":"pt","question":"Por que contratos entre serviços devem ser testados?","expected_topics":["contratos","integração","serviços"]}
+{"id":"q016","lang":"en","question":"What is software architecture?","expected_topics":["architecture","components","structural decisions"]}
+{"id":"q017","lang":"en","question":"Why does observability matter in distributed systems?","expected_topics":["observability","failures","services"]}
+{"id":"q018","lang":"en","question":"Explain the Strategy pattern briefly.","expected_topics":["strategy","algorithms","runtime"]}
+{"id":"q019","lang":"en","question":"When is the Adapter pattern useful?","expected_topics":["adapter","incompatible interfaces"]}
+{"id":"q020","lang":"en","question":"What do unit tests validate?","expected_topics":["unit tests","local rules"]}
+{"id":"q021","lang":"en","question":"What do integration tests validate?","expected_topics":["integration","contracts","services"]}
+{"id":"q022","lang":"en","question":"What does a smoke test confirm?","expected_topics":["end to end","real environment"]}
+{"id":"q023","lang":"en","question":"How can RAG reduce hallucination?","expected_topics":["corpus","context","citations"]}
+{"id":"q024","lang":"en","question":"Why is coherent chunking important for RAG?","expected_topics":["chunking","context","retrieval"]}
+{"id":"q025","lang":"en","question":"What is re-ranking in a RAG pipeline?","expected_topics":["re-ranking","candidates","relevance"]}
+{"id":"q026","lang":"en","question":"Why are traceable citations useful?","expected_topics":["citations","traceability","source"]}
+{"id":"q027","lang":"en","question":"Which dimensions are part of software quality?","expected_topics":["correctness","maintainability","performance","security"]}
+{"id":"q028","lang":"en","question":"How should distributed services handle failures?","expected_topics":["fault tolerance","isolation","observability"]}
+{"id":"q029","lang":"en","question":"What does it mean to isolate component responsibilities?","expected_topics":["components","responsibilities","contracts"]}
+{"id":"q030","lang":"en","question":"Why should service contracts be tested?","expected_topics":["contracts","integration","services"]}
