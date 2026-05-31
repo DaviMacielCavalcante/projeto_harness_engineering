@@ -52,5 +52,5 @@ Entrega do Tema 5 - RAG Distribuído.
 - [x] Este PC conectado ao Tailscale como worker real.
 - [ ] Acesso ao PC1 via Tailscale validado com Davi disponível.
 - [x] Docker/Compose/uv validados neste PC.
-- [ ] Corpus de escala curado localmente.
+- [x] Corpus mínimo versionado em `samples/corpus/` (9 docs) — curadoria de escala **descopada 2026-05-31**: o RAG não é avaliado, então o corpus mínimo basta para os experimentos de desempenho.
 - [ ] Experimentos B4 executados em Modo 2 completo.

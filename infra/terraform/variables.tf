@@ -42,3 +42,9 @@ variable "image_tag" {
   type    = string
   default = "latest"
 }
+
+variable "chunk_worker_count" {
+  type        = number
+  default     = 1
+  description = "Réplicas do ingest-worker-chunk neste host worker (Exp 1 varia para medir speedup)."
+}

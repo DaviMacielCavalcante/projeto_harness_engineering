@@ -1,6 +1,6 @@
 # projeto_harness_engineering
 
-Sistema RAG (Retrieval-Augmented Generation) distribuído entre 3 PCs físicos via Tailscale, sem custos de cloud. Trabalho do Tema 5 da disciplina de Programação Distribuída e Paralela (CESUPA, 2º bim 2026), com entrega em **2026-05-25**.
+Sistema RAG (Retrieval-Augmented Generation) distribuído entre 3 PCs físicos via Tailscale, sem custos de cloud. Trabalho do Tema 5 da disciplina de Programação Distribuída e Paralela (CESUPA, 2º bim 2026), com entrega em **2026-06-01** (prorrogada de 2026-05-25).
 
 ## Antes de tudo: leia o spec e o plano vigente
 

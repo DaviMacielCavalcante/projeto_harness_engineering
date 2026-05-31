@@ -15,9 +15,7 @@ SOURCE_TYPES = {
 
 def iter_corpus_files(corpus: Path) -> list[Path]:
     return sorted(
-        path
-        for path in corpus.rglob("*")
-        if path.is_file() and path.suffix.lower() in SOURCE_TYPES
+        path for path in corpus.rglob("*") if path.is_file() and path.suffix.lower() in SOURCE_TYPES
     )
 
 

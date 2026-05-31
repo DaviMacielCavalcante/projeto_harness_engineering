@@ -18,3 +18,7 @@ qdrant_url    = "http://100.FILL.ME.IN:6333"
 redis_url     = "redis://100.FILL.ME.IN:6379/0"
 rerank_url    = "http://100.FILL.ME.IN:8081"
 image_tag     = "0.1.0-b3"
+
+# Réplicas do ingest-worker-chunk neste host. Default 1.
+# Exp 1 (speedup de indexação) varia este valor entre os apply: 1, 2, 4, ...
+chunk_worker_count = 1

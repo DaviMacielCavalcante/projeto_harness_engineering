@@ -1,10 +1,17 @@
 # Pendências finais — fechamento do projeto
 
-> Snapshot da sessão de **2026-05-24**. Entrega: **25/05**. A maioria depende do
+> Snapshot da sessão de **2026-05-24**. Entrega original: **25/05**. A maioria depende do
 > Pablo Abdon terminar a trilha externa dele (este PC no Tailscale como worker
 > real) antes que o Modo 2 distribuído suba. A `abdon-workstation` fica apenas
 > como teste simples de Tailscale. A Task 3 do B3 e o corpus mínimo local foram
 > destravados em 2026-05-25.
+>
+> **Atualização 2026-05-31:** entrega **prorrogada para 2026-06-01**. `docs/arquitetura.pdf`
+> regenerado a partir do `.md` já editado pelo Davi (12 pp, 3 diagramas PNG embutidos) — item
+> 3.5 abaixo fechado. Experimentos B4 (Exp 1/2/4) seguem **não coletados**. **Corpus descopado:**
+> o professor não avalia o RAG em si, então o corpus mínimo versionado (9 docs) basta — os
+> experimentos medem desempenho do pipeline, não qualidade de recuperação. O dia extra abre
+> janela para Exp 1/Exp 2 em Modo 1, que não exigem a malha distribuída (ver §7.3 do doc técnico).
 
 ---
 
@@ -26,8 +33,7 @@
 
 ### 1.3 Corpus seedado
 - [x] `scripts/seed_corpus.py` entregue.
-- [ ] `samples/corpus/` curado com ~80 PDFs.
-- **Consequência sem isso:** experimentos B4 sem corpus de escala suficiente; o smoke continua rodando com 1 PDF do B1.
+- [x] `samples/corpus/` com corpus mínimo versionado (9 docs). **Descopado 2026-05-31:** o professor não avalia o RAG em si (qualidade de recuperação fora da nota), então a curadoria de ~80 PDFs não é mais necessária — os experimentos medem desempenho do pipeline e o corpus mínimo basta pra exercitar o paralelismo.
 
 ### 1.4 Chaos test + DLQ inspector
 - [x] `scripts/chaos_test.sh` (kill workers, kill Ollama, sobrecarga).
@@ -80,11 +86,10 @@
 - [ ] Marcar Task 5 (Terraform) e Task 6 (Ansible) do B3 como concluídas pelo João Miguel (commit `bba2fa8` ainda não refletido no TODO)
 - [ ] Atualizar pendências do "Já feito" com a sessão de 2026-05-24
 
-### 3.5 Geração do PDF (B5)
-- [ ] Instalar dependências: `pandoc`, `xelatex`, `mermaid-filter` ou `@mermaid-js/mermaid-cli`
-- [ ] Opção A (filter): `pandoc docs/arquitetura.md -o docs/arquitetura.pdf --pdf-engine=xelatex --filter mermaid-filter`
-- [ ] Opção B (manual): exportar cada bloco `mermaid` com `mmdc -i diagram.mmd -o diagram.png`, substituir os blocos no `.md` por `![](diagram.png)`, rodar `pandoc` sem filter
-- [ ] Validar paginação (8–15 pp), correção dos diagramas renderizados, encoding UTF-8
+### 3.5 Geração do PDF (B5) ✓ 2026-05-31
+- [x] Dependências presentes: `pandoc` 3.1.3 + `xelatex` (não precisou de `mermaid-filter` — os `.mmd` já estão exportados como `.png` em `docs/diagrams/`, então seguimos a Opção B)
+- [x] **Comando usado:** `pandoc docs/arquitetura.md -o docs/arquitetura.pdf --pdf-engine=xelatex --resource-path=docs -V geometry:margin=2.5cm -V mainfont="DejaVu Serif" -V monofont="DejaVu Sans Mono" -V colorlinks=true`
+- [x] Validado: **12 pp** (dentro de 8–15), 3 diagramas embutidos (components p.2, ingestion p.4, query p.5), UTF-8 ok. Backup do PDF anterior em `/tmp/arquitetura.pdf.bak`
 
 ### 3.6 Slides + apresentação (B5)
 - [x] `docs/slides/slides.md` em formato Marp

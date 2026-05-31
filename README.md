@@ -51,7 +51,12 @@ Detalhes ativos em [`PENDENCIAS_FINAIS.md`](PENDENCIAS_FINAIS.md).
 
 - Docker e Docker Compose
 - Python 3.12 (`uv` resolve automaticamente)
-- (Opcional) GPU NVIDIA com `nvidia-container-toolkit` — runbook em [`docs/setup-gpu-pc1.md`](docs/setup-gpu-pc1.md)
+- [`uv`](https://github.com/astral-sh/uv) instalado:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh   # Linux/macOS
+  # ou: pip install uv
+  ```
+- (Opcional) GPU NVIDIA com `nvidia-container-toolkit` — runbook em [`docs/setup-gpu-pc1.md`](docs/setup-gpu-pc1.md). **Sem GPU NVIDIA**, ver "Rodar sem GPU" abaixo.
 - (Modo 2) Tailscale — runbook em [`docs/setup-tailscale.md`](docs/setup-tailscale.md)
 
 ## Como rodar — Modo 1 (single-host)
@@ -60,12 +65,23 @@ Detalhes ativos em [`PENDENCIAS_FINAIS.md`](PENDENCIAS_FINAIS.md).
 # Instala dependências no .venv
 uv sync
 
+# (Opcional) Em Modo 1 os defaults do docker-compose já funcionam.
+# Se quiser customizar variáveis, copie o exemplo:
+cp .env.example .env.local
+
 # Sobe tudo (gateway + workers + Qdrant + RabbitMQ + Redis + Ollama + rerank + observabilidade)
 make dev
 make pull-models       # baixa qwen2.5:7b + nomic-embed-text + bge-reranker
 
 # Roda o smoke ponta-a-ponta (ingest 1 PDF → query → citações)
 make smoke
+
+# Outros atalhos do Makefile:
+make down              # derruba a stack
+make logs              # tail -f de todos os containers
+make clean             # down -v + remove .venv/.pytest_cache/.ruff_cache
+make test              # uv run pytest tests/unit -v
+make lint              # uv run ruff check src tests
 
 # Acessar UIs:
 #   http://localhost:8000/health        gateway
@@ -78,16 +94,53 @@ make smoke
 
 Para validar a stack de métricas e dashboards, ver [`docs/observabilidade.md`](docs/observabilidade.md) seção 3.
 
+### Rodar sem GPU (CPU / AMD / WSL)
+
+O `docker-compose.yml` reserva uma GPU NVIDIA para o serviço `ollama`. Em máquinas sem NVIDIA, crie um override local (ignorado pelo Git) que remove essa reserva e baixe um modelo leve:
+
+```bash
+cat > docker-compose.override.yml <<'EOF'
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices: []
+EOF
+
+make dev
+make pull-models MODEL=llama3.2:1b   # gerador leve que roda em CPU
+make smoke
+```
+
+A inferência fica mais lenta, mas o pipeline completo funciona.
+
 ## Como rodar — Modo 2 (3 PCs via Tailscale)
 
 ```bash
-# A partir do PC1, com os 3 hosts no inventário Ansible
+# 1) Copie o exemplo e preencha com os IPs Tailscale do PC1 (100.x.y.z)
+cp .env.example .env.distributed
+$EDITOR .env.distributed
+
+# 2) Ajuste o inventário Ansible com os hosts da tailnet
+cp infra/ansible/inventory.yml.example infra/ansible/inventory.yml
+$EDITOR infra/ansible/inventory.yml
+
+# 3) A partir do PC1, com os 3 hosts no inventário
 cd infra/ansible
 ansible-playbook -i inventory.yml playbook-bootstrap.yml   # instala Docker + Tailscale + NVIDIA Toolkit (só PC1)
 ansible-playbook -i inventory.yml playbook-deploy.yml      # sincroniza repo, gera .env.local, terraform apply em cada host
 
 # Atalho
 bash scripts/deploy.sh
+```
+
+Como alternativa ao deploy.sh, é possível subir os containers de cada host via Terraform manualmente:
+
+```bash
+make tf-init
+make tf-apply HOST=pc1   # ou pc2, pc3 — usa infra/terraform/envs/<host>.tfvars
+make tf-destroy HOST=pc1
 ```
 
 Detalhes em [`docs/arquitetura.md`](docs/arquitetura.md) §6.

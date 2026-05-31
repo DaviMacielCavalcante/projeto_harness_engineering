@@ -35,6 +35,12 @@ variable "image_tag" {
   type = string
 }
 
+variable "chunk_worker_count" {
+  type        = number
+  default     = 1
+  description = "Réplicas do ingest-worker-chunk. Exp 1 varia este valor para medir speedup de indexação."
+}
+
 resource "docker_image" "worker" {
   name         = "rag-worker:${var.image_tag}"
   keep_locally = true
@@ -75,7 +81,10 @@ resource "docker_container" "ingest_worker_doc" {
 }
 
 resource "docker_container" "ingest_worker_chunk" {
-  name  = "rag-ingest-worker-chunk"
+  count = var.chunk_worker_count
+  # 1ª réplica mantém o nome canônico (alvo do Prometheus, default do chaos test);
+  # réplicas extras (Exp 1, N>1) ganham sufixo -2, -3, ...
+  name  = count.index == 0 ? "rag-ingest-worker-chunk" : "rag-ingest-worker-chunk-${count.index + 1}"
   image = docker_image.worker.image_id
   env = concat(local.worker_envs, [
     "WORKER_KIND=ingest",
@@ -86,9 +95,16 @@ resource "docker_container" "ingest_worker_chunk" {
   networks_advanced {
     name = var.network_name
   }
-  ports {
-    internal = 9100
-    external = 9101
+  # Só a 1ª réplica publica a porta de métricas no host (9101) — preserva o alvo
+  # do Prometheus. Réplicas extras não expõem host port para evitar colisão;
+  # consomem da fila e upsertam no Qdrant normalmente (a indexação não depende
+  # de host port, só do acesso à rede).
+  dynamic "ports" {
+    for_each = count.index == 0 ? [1] : []
+    content {
+      internal = 9100
+      external = 9101
+    }
   }
   restart = "unless-stopped"
 }
