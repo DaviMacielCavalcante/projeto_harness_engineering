@@ -224,15 +224,38 @@ Cenário: PC1 com Compose Modo 1 completo (gateway + rerank-service + 2 ingest-w
 
 A redução parcial no L2 hit (58 % em vez de próximo de zero) é resultado arquitetural: o L2 fica pós-rerank, então o hit pula a geração (~26 s) mas paga embed + retrieval + rerank (~8 s). A escolha favorece **correção da chave** sobre **economia de latência** (§8.3).
 
-### 7.3 Experimentos pendentes (B4)
+### 7.3 Exp 1 — speedup de indexação (Modo 2, 2026-05-31)
 
-Protocolos definidos em `docs/superpowers/plans/2026-05-09-tema5-b4-experimentos-doc.md`; dependem do Modo 2 completo (3 PCs ativos). Como medem desempenho do pipeline (paralelismo, throughput, recuperação a falhas) e não qualidade de recuperação, o corpus mínimo versionado em `samples/corpus/` já basta para exercitá-los:
+Cenário: stack distribuída via Terraform (PC1 *server*; workers em PC2/PC3 via Tailscale), variando o número de `ingest-worker-chunk` ativos pela variável `chunk_worker_count`. Corpus mínimo versionado (`samples/corpus/`, 9 documentos → 29 chunks). Entre cada N há reset de estado: purge das filas de ingestão (RabbitMQ Management API) + recriação da collection Qdrant. Coletados N = 1 e N = 2.
 
-- **Exp 1 — speedup de indexação**: variar N chunk-workers (N ∈ {1, 2, 4, 8}), plotar `tempo(N)` e `speedup(N)=T(1)/T(N)`. Saída: `data/exp1/exp1.png`.
-- **Exp 2 — throughput de queries**: C ∈ {1, 2, 4, 8, 16, 32} clientes simultâneos; medir QPS e p95. Saída: `data/exp2/exp2.png`.
-- **Exp 4 — chaos test**: sob carga constante, derrubar (a) 1 chunk-worker, (b) Ollama, (c) rerank-service; medir taxa de erro e tempo de recuperação. Saída: `data/exp4/exp4.png` + log do `chaos_test.sh`.
+| N (chunk-workers) | Tempo de indexação | Vazão | Speedup `T(1)/T(N)` | Eficiência `speedup/N` |
+|---|---|---|---|---|
+| 1 | 50.2 s | 0.58 chunks/s | 1.00× | 100 % |
+| 2 | 45.2 s | 0.64 chunks/s | 1.11× | 55 % |
 
-**Exp 3 (bônus +10, Ollama vs vLLM)** cortado por cronograma em 2026-05-24. A entrega foi prorrogada de 2026-05-25 para 2026-06-01; até esta revisão (2026-05-31) os dados de Exp 1/2/4 **ainda não foram coletados** — a coleta depende do Modo 2 completo (3 PCs ativos via Tailscale), ainda pendente (§8.3). O dia adicional abre uma janela para coletar ao menos Exp 1/Exp 2 em Modo 1 (single-host), que não exigem a malha distribuída; persistindo a pendência de infraestrutura, os protocolos acima permanecem como contribuição metodológica e o resultado é declarado sem maquiagem.
+**Leitura.** Dobrar os chunk-workers reduziu o tempo de indexação em apenas ~10 % (speedup 1.11×), derrubando a eficiência paralela de 100 % para 55 %. A vazão agregada sobe, mas cada worker passa a render pouco mais da metade do ideal — **scaling fortemente sublinear**.
+
+**Implicação (e causa).** O resultado é dominado pelo **tamanho do corpus**, não pela arquitetura. Com apenas 29 chunks há trabalho insuficiente para amortizar o overhead fixo do pipeline (round-trips de fila, latência do embed no Ollama, rede Tailscale PC1↔workers): o 2.º worker fica ocioso boa parte do tempo. Como a avaliação é sobre engenharia distribuída e **não** sobre qualidade de recuperação, o corpus foi mantido mínimo de propósito — e o custo dessa decisão é exatamente este: o Exp 1 demonstra o **mecanismo** de paralelismo de dados (duas filas, N consumidores idempotentes consumindo em paralelo), mas não produz uma curva de speedup expressiva. Uma curva informativa exigiria um corpus uma a duas ordens de grandeza maior (centenas a milhares de chunks), regime em que o tempo de embed domina o overhead e o speedup se aproximaria do linear. O mecanismo está correto e instrumentado; é o regime de carga que é pequeno demais para evidenciá-lo. Gráfico em `data/exp1/exp1.png`; dados em `data/exp1/results.csv`.
+
+### 7.4 Exp 2 — throughput de queries vs concorrência (Modo 2, 2026-05-31)
+
+Carga de 200 queries por nível de concorrência C ∈ {1, 2, 4, 8, 16, 32} contra o gateway (query-workers em PC2/PC3; geração no Ollama único do PC1). Resumo:
+
+| C | QPS | p50 | p95 | Erros |
+|---|---|---|---|---|
+| 1 | 0.08 | 12.2 s | 16.6 s | 0 % |
+| 8 | 0.08 | 95.9 s | 120.1 s | 0 % |
+| 32 | 0.24 | 120.3 s | 120.6 s | 0 % |
+
+Três achados: (1) **zero erros** em toda a faixa — sob sobrecarga as queries caem em *degraded mode* ao bater no timeout de ~120 s do gateway (§5.3), trocando qualidade por disponibilidade; (2) a **geração no Ollama único (1 GPU)** é o gargalo — concorrência extra apenas enfileira, e a partir de C=8 a maioria das queries já degrada; (3) o **cache L2 não surtiu efeito** nesta rodada apesar de ~170 queries repetidas (a investigar — provável conectividade Redis workers→PC1). Análise completa, implicações e melhorias propostas em **[`docs/experimentos.md`](experimentos.md)**. Gráfico: `data/exp2/exp2.png`.
+
+### 7.5 Experimentos pendentes (Exp 4)
+
+Runner pronto (`scripts/run_exp4_chaos.py` + `plot_exp4.py`); até esta revisão (2026-05-31) **não coletado**:
+
+- **Exp 4 — chaos test**: sob carga constante, derrubar (a) 1 chunk-worker, (b) Ollama, (c) rerank-service; medir taxa de erro e tempo de recuperação. Saída: `data/exp4/exp4.png`.
+
+**Exp 3 (bônus +10, Ollama vs vLLM)** cortado por cronograma em 2026-05-24.
 
 ## 8. Discussão e limitações
 

@@ -22,6 +22,8 @@ Em Modo 1 ambos são apenas ``docker`` (default).
 Uso:
   uv run python scripts/run_exp4_chaos.py --host 100.x.y.z
   uv run python scripts/run_exp4_chaos.py --scenarios burst,kill_ollama
+
+Cada execução também espelha o stdout em ``data/exp4/log.txt`` (append).
 """
 
 import argparse
@@ -36,7 +38,7 @@ import shlex
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO, cast
 
 import httpx
 
@@ -48,6 +50,27 @@ METRICS = {
     "queue_chunks": 'rabbitmq_queue_messages_ready{queue="ingest.chunks"}',
     "ollama_inflight": "rag_ollama_inflight_requests",
 }
+
+
+class _Tee:
+    """Espelha tudo escrito em stdout também num arquivo de log (append)."""
+
+    def __init__(self, stream: TextIO, log_path: Path) -> None:
+        self._stream = stream
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._log = log_path.open("a", encoding="utf-8")
+
+    def write(self, data: str) -> int:
+        self._stream.write(data)
+        self._log.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        self._stream.flush()
+        self._log.flush()
+
+    def close(self) -> None:
+        self._log.close()
 
 
 def load_queries(path: Path) -> list[dict[str, str]]:
@@ -221,21 +244,30 @@ async def main() -> int:
     gateway = args.gateway_url or f"http://{args.host}:8000"
     prom = args.prom_url or f"http://{args.host}:9090"
 
-    if not args.queries_file.exists():
-        print(f"[chaos] queries inexistentes: {args.queries_file}")
-        return 2
+    out = Path("data/exp4")
+    original_stdout = sys.stdout
+    tee = _Tee(original_stdout, out / "log.txt")
+    sys.stdout = cast(TextIO, tee)
+    print(f"\n# === run {time.strftime('%Y-%m-%d %H:%M:%S')} ===")
+    try:
+        if not args.queries_file.exists():
+            print(f"[chaos] queries inexistentes: {args.queries_file}")
+            return 2
 
-    selected = [s.strip() for s in args.scenarios.split(",") if s.strip()]
-    unknown = [s for s in selected if s not in SCENARIOS]
-    if unknown:
-        print(f"[chaos] cenários desconhecidos: {unknown}; válidos: {list(SCENARIOS)}")
-        return 2
+        selected = [s.strip() for s in args.scenarios.split(",") if s.strip()]
+        unknown = [s for s in selected if s not in SCENARIOS]
+        if unknown:
+            print(f"[chaos] cenários desconhecidos: {unknown}; válidos: {list(SCENARIOS)}")
+            return 2
 
-    for name in selected:
-        await SCENARIOS[name](args, gateway, prom)
+        for name in selected:
+            await SCENARIOS[name](args, gateway, prom)
 
-    print("\n[chaos] arquivos em data/exp4/ — rode plot_exp4.py para gerar o gráfico")
-    return 0
+        print("\n[chaos] arquivos em data/exp4/ — rode plot_exp4.py para gerar o gráfico")
+        return 0
+    finally:
+        sys.stdout = original_stdout
+        tee.close()
 
 
 if __name__ == "__main__":

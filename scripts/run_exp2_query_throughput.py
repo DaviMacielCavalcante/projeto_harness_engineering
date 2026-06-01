@@ -11,6 +11,8 @@ por host) durante toda a varredura de C.
 Uso:
   uv run python scripts/run_exp2_query_throughput.py --host 100.x.y.z
   uv run python scripts/run_exp2_query_throughput.py --c-values 1,4,16 --n-queries 100
+
+Cada execução também espelha o stdout em ``data/exp2/log.txt`` (append).
 """
 
 import argparse
@@ -22,8 +24,30 @@ import statistics
 import sys
 import time
 from pathlib import Path
+from typing import TextIO, cast
 
 import httpx
+
+
+class _Tee:
+    """Espelha tudo escrito em stdout também num arquivo de log (append)."""
+
+    def __init__(self, stream: TextIO, log_path: Path) -> None:
+        self._stream = stream
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._log = log_path.open("a", encoding="utf-8")
+
+    def write(self, data: str) -> int:
+        self._stream.write(data)
+        self._log.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        self._stream.flush()
+        self._log.flush()
+
+    def close(self) -> None:
+        self._log.close()
 
 
 def load_queries(path: Path, n_queries: int) -> list[dict[str, str]]:
@@ -99,34 +123,41 @@ def main() -> int:
 
     gateway = args.gateway_url or f"http://{args.host}:8000"
 
-    if not args.queries_file.exists():
-        print(f"[exp2] queries inexistentes: {args.queries_file}")
-        return 2
-
-    queries = load_queries(args.queries_file, args.n_queries)
-    if not queries:
-        print(f"[exp2] nenhuma query em {args.queries_file}")
-        return 2
-
-    c_values = [int(c) for c in args.c_values.split(",") if c.strip()]
     out = Path("data/exp2")
-    out.mkdir(parents=True, exist_ok=True)
+    original_stdout = sys.stdout
+    tee = _Tee(original_stdout, out / "log.txt")
+    sys.stdout = cast(TextIO, tee)
+    print(f"\n# === run {time.strftime('%Y-%m-%d %H:%M:%S')} ===")
+    try:
+        if not args.queries_file.exists():
+            print(f"[exp2] queries inexistentes: {args.queries_file}")
+            return 2
 
-    rows: list[dict[str, float | None]] = []
-    for concurrency in c_values:
-        print(f"\n=== Exp2 C={concurrency} | {len(queries)} queries | gateway={gateway} ===")
-        row = asyncio.run(run_round(gateway, concurrency, queries, args.top_k, args.timeout))
-        print(row)
-        rows.append(row)
+        queries = load_queries(args.queries_file, args.n_queries)
+        if not queries:
+            print(f"[exp2] nenhuma query em {args.queries_file}")
+            return 2
 
-    csv_path = out / "results.csv"
-    fieldnames = ["C", "total_s", "qps", "p50", "p95", "p99", "error_rate"]
-    with csv_path.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"[exp2] resultados em {csv_path}")
-    return 0
+        c_values = [int(c) for c in args.c_values.split(",") if c.strip()]
+
+        rows: list[dict[str, float | None]] = []
+        for concurrency in c_values:
+            print(f"\n=== Exp2 C={concurrency} | {len(queries)} queries | gateway={gateway} ===")
+            row = asyncio.run(run_round(gateway, concurrency, queries, args.top_k, args.timeout))
+            print(row)
+            rows.append(row)
+
+        csv_path = out / "results.csv"
+        fieldnames = ["C", "total_s", "qps", "p50", "p95", "p99", "error_rate"]
+        with csv_path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        print(f"[exp2] resultados em {csv_path}")
+        return 0
+    finally:
+        sys.stdout = original_stdout
+        tee.close()
 
 
 if __name__ == "__main__":

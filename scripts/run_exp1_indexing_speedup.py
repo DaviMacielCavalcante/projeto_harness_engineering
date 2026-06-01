@@ -30,15 +30,18 @@ Fluxo por execução:
   3. submete o corpus via ``POST /ingest`` no gateway
   4. espera ``points_count`` estabilizar e mede o tempo decorrido
   5. anexa ``{N, elapsed_s, chunks, chunks_per_s}`` ao CSV
+
+Cada execução também espelha o stdout em ``data/exp1/log.txt`` (append).
 """
 
 import argparse
 import base64
 import csv
 import os
+import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO, cast
 
 import httpx
 
@@ -52,6 +55,27 @@ SOURCE_TYPES = {
 
 EMBEDDING_DIM = 768
 COLLECTION = "se_corpus"
+
+
+class _Tee:
+    """Espelha tudo escrito em stdout também num arquivo de log (append)."""
+
+    def __init__(self, stream: TextIO, log_path: Path) -> None:
+        self._stream = stream
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._log = log_path.open("a", encoding="utf-8")
+
+    def write(self, data: str) -> int:
+        self._stream.write(data)
+        self._log.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        self._stream.flush()
+        self._log.flush()
+
+    def close(self) -> None:
+        self._log.close()
 
 
 def iter_corpus_files(corpus: Path) -> list[Path]:
@@ -181,39 +205,46 @@ def main() -> int:
     qdrant = args.qdrant_url or f"http://{args.host}:6333"
     rabbitmq_mgmt = args.rabbitmq_mgmt_url or f"http://{args.host}:15672"
 
-    if not args.corpus.exists():
-        print(f"[exp1] corpus inexistente: {args.corpus}")
-        return 2
-
-    files = iter_corpus_files(args.corpus)
-    if not files:
-        print(f"[exp1] nenhum arquivo suportado em {args.corpus}")
-        return 2
-
-    print(f"\n=== Exp1 N={args.n} | {len(files)} arquivos | gateway={gateway} ===")
-    purge_queues(rabbitmq_mgmt, args.rabbitmq_user, args.rabbitmq_pass)
-    reset_collection(qdrant)
-
-    submitted = submit_corpus(gateway, files, args.ingest_timeout)
-    print(f"[exp1] submetidos {submitted}/{len(files)} arquivos; medindo indexação")
-
-    elapsed, count = wait_for_indexing(qdrant, args.timeout, args.stable_checks, args.interval)
-    chunks_per_s = count / elapsed if elapsed > 0 else 0.0
-    print(f"[exp1] N={args.n} elapsed={elapsed:.1f}s chunks={count} cps={chunks_per_s:.2f}")
-
     out = Path("data/exp1")
-    out.mkdir(parents=True, exist_ok=True)
-    append_row(
-        out / "results.csv",
-        {
-            "N": float(args.n),
-            "elapsed_s": round(elapsed, 1),
-            "chunks": float(count),
-            "chunks_per_s": round(chunks_per_s, 2),
-        },
-    )
-    print(f"[exp1] linha anexada em {out / 'results.csv'}")
-    return 0
+    original_stdout = sys.stdout
+    tee = _Tee(original_stdout, out / "log.txt")
+    sys.stdout = cast(TextIO, tee)
+    print(f"\n# === run {time.strftime('%Y-%m-%d %H:%M:%S')} ===")
+    try:
+        if not args.corpus.exists():
+            print(f"[exp1] corpus inexistente: {args.corpus}")
+            return 2
+
+        files = iter_corpus_files(args.corpus)
+        if not files:
+            print(f"[exp1] nenhum arquivo suportado em {args.corpus}")
+            return 2
+
+        print(f"\n=== Exp1 N={args.n} | {len(files)} arquivos | gateway={gateway} ===")
+        purge_queues(rabbitmq_mgmt, args.rabbitmq_user, args.rabbitmq_pass)
+        reset_collection(qdrant)
+
+        submitted = submit_corpus(gateway, files, args.ingest_timeout)
+        print(f"[exp1] submetidos {submitted}/{len(files)} arquivos; medindo indexação")
+
+        elapsed, count = wait_for_indexing(qdrant, args.timeout, args.stable_checks, args.interval)
+        chunks_per_s = count / elapsed if elapsed > 0 else 0.0
+        print(f"[exp1] N={args.n} elapsed={elapsed:.1f}s chunks={count} cps={chunks_per_s:.2f}")
+
+        append_row(
+            out / "results.csv",
+            {
+                "N": float(args.n),
+                "elapsed_s": round(elapsed, 1),
+                "chunks": float(count),
+                "chunks_per_s": round(chunks_per_s, 2),
+            },
+        )
+        print(f"[exp1] linha anexada em {out / 'results.csv'}")
+        return 0
+    finally:
+        sys.stdout = original_stdout
+        tee.close()
 
 
 if __name__ == "__main__":

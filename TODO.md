@@ -158,8 +158,8 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 
 ### Experimentos (João Miguel)
 > **2026-05-31 — runners + plots implementados** (Modo 2-ready), faltando só **executar** contra a stack e coletar os PNGs. Divergências do rascunho do plano B4, deliberadas: (a) **sem `docker compose --scale`** — em Modo 2 a stack sobe via **Terraform** (`infra/terraform`, módulo `worker`), que é o control plane dos containers; Exp 1 roda **uma vez por N** via `--n`. variar N via `chunk_worker_count` no módulo `worker` (✓ adicionado 2026-05-31 ao IaC do João: `count` na resource `ingest_worker_chunk`; 1ª réplica mantém o nome canônico `rag-ingest-worker-chunk` + porta host 9101 — alvo do Prometheus preservado; réplicas extras viram `-2`/`-3` sem host port pra evitar colisão); (b) reset de estado por **HTTP** (RabbitMQ mgmt :15672 + recriação da collection Qdrant :6333), tudo apontável ao PC1 via `--host`; (c) Exp 4 usa `--docker-pc1`/`--docker-worker` (ex: `"docker -H ssh://pc2-jm"`) pra matar containers no host certo. **Dep nova:** `uv add matplotlib` (só os plots usam; `matplotlib.*` já adicionado aos overrides do mypy).
-- [ ] **Exp 1** — speedup indexação variando N workers — `data/exp1/exp1.png` (runner+plot prontos: `scripts/run_exp1_indexing_speedup.py` + `scripts/plot_exp1.py`)
-- [ ] **Exp 2** — throughput vs concorrência (C ∈ {1..32}) — `data/exp2/exp2.png` (runner+plot prontos: `scripts/run_exp2_query_throughput.py` + `scripts/plot_exp2.py`)
+- [x] **Exp 1** — speedup indexação variando N workers — **coletado 2026-05-31** (Modo 2, N=1/2): speedup 1.11×, **eficiência 55%** (scaling sublinear dominado pelo corpus mínimo de 29 chunks; mecanismo correto, carga pequena demais pra evidenciar — análise no §7.3 do doc). `data/exp1/{results.csv,exp1.png,log.txt}`
+- [x] **Exp 2** — throughput vs concorrência (C ∈ {1..32}) — **coletado 2026-05-31** (Modo 2): QPS 0.08→0.24, latência satura no timeout de ~120s (degraded mode), **zero erros**; gargalo = Ollama único; **cache L2 sem efeito** (a investigar). Análise completa + melhorias em [`docs/experimentos.md`](docs/experimentos.md); resumo no §7.4 do doc. `data/exp2/{results.csv,exp2.png,log.txt}`
 - [ ] **Exp 4** — chaos test automatizado — `data/exp4/exp4.png` (runner+plot prontos: `scripts/run_exp4_chaos.py` + `scripts/plot_exp4.py`)
 - [x] **Exp 3 (cortado 2026-05-24)** — Ollama vs vLLM — corte #1 da lista de cortes pré-definida, aplicado por cronograma. Sistema continua íntegro sem ele; perdem-se 10 pts de bônus.
 
@@ -179,7 +179,7 @@ Checklist operacional de progresso. Para detalhes técnicos de cada item, ver os
 **Plano:** [`b5-final.md`](docs/superpowers/plans/2026-05-09-tema5-b5-final.md)
 
 - [x] **[Davi]** `docs/arquitetura.pdf` gerado (pandoc + xelatex) ✓ 2026-05-31: 12 pp, 3 diagramas PNG embutidos (`--resource-path=docs`, sem filtro Mermaid pois os `.mmd` já viraram `.png` em `docs/diagrams/`)
-- [x] **[Davi]** `docs/slides/slides.md` em Marp + render para PDF
+- [x] **[Davi]** Slides da apresentação — **entregues via link no Google Classroom** (não versionados no repo)
 - [ ] **[Pablo Abdon]** Smoke a partir de clone limpo passa
 - [ ] **[João Miguel]** Lint final zerado (`uv run ruff check . && uv run mypy .`)
 - [x] Cada integrante: relatórios em `docs/relatorios_aprendizagem/`

@@ -14,7 +14,7 @@ Sistema de Q&A com **Retrieval-Augmented Generation** distribuído entre 3 PCs f
 | **Diagramas** (componentes, sequência ingestão, sequência query) | [`docs/diagrams/`](docs/diagrams/) — sources `.mmd` + PNGs renderizados |
 | **Guia de observabilidade** (métricas, dashboards, queries) | [`docs/observabilidade.md`](docs/observabilidade.md) — catálogo das 11 métricas + PromQL/LogQL prontos |
 | **Decisões e prompts** | [`docs/decisoes.md`](docs/decisoes.md), [`docs/prompts.md`](docs/prompts.md) |
-| **Slides e checklist final** | [`docs/slides/slides.md`](docs/slides/slides.md), [`ENTREGA.md`](ENTREGA.md) |
+| **Checklist final** | [`ENTREGA.md`](ENTREGA.md) — slides da apresentação entregues via link no Google Classroom (fora do repo) |
 | **Declaração de uso de IA** (Extra) | [`docs/USO_DE_IA.md`](docs/USO_DE_IA.md) — política, fronteiras, entradas datadas |
 | **Relatórios de aprendizagem** (entregável 8.4) | [`docs/relatorios_aprendizagem/`](docs/relatorios_aprendizagem/) — um arquivo por integrante |
 | **Runbooks operacionais** | [`docs/setup-tailscale.md`](docs/setup-tailscale.md), [`docs/setup-gpu-pc1.md`](docs/setup-gpu-pc1.md) |
@@ -82,17 +82,9 @@ make logs              # tail -f de todos os containers
 make clean             # down -v + remove .venv/.pytest_cache/.ruff_cache
 make test              # uv run pytest tests/unit -v
 make lint              # uv run ruff check src tests
-
-# Acessar UIs:
-#   http://localhost:8000/health        gateway
-#   http://localhost:3000               Grafana (admin/admin) — dashboard "RAG Distribuído"
-#   http://localhost:9090/targets       Prometheus
-#   http://localhost:3000/explore       Loki (datasource Loki)
-#   http://localhost:15672              RabbitMQ Management (guest/guest)
-#   http://localhost:6333/dashboard     Qdrant
 ```
 
-Para validar a stack de métricas e dashboards, ver [`docs/observabilidade.md`](docs/observabilidade.md) seção 3.
+> UIs (Grafana, Prometheus, RabbitMQ, Qdrant): ver **[Painéis e GUIs](#painéis-e-guis-observabilidade-e-infraestrutura)** abaixo.
 
 ### Rodar sem GPU (CPU / AMD / WSL)
 
@@ -144,6 +136,23 @@ make tf-destroy HOST=pc1
 ```
 
 Detalhes em [`docs/arquitetura.md`](docs/arquitetura.md) §6.
+
+## Painéis e GUIs (observabilidade e infraestrutura)
+
+Com a stack de pé (`make dev` no Modo 1, ou `make tf-apply HOST=pc1` no Modo 2), os GUIs ficam nas portas abaixo. Em **Modo 1** use `localhost`; em **Modo 2** troque por **o IP Tailscale do PC1** (`100.x.y.z`) — toda a observabilidade vive no PC1.
+
+| Recurso | URL (Modo 1) | Credenciais | Para quê |
+|---|---|---|---|
+| **Grafana** | http://localhost:3000 | `admin` / `admin` | Dashboard **"RAG Distribuído"** — 5 painéis: throughput, latência p95 por fase, tokens, saúde (Ollama in-flight + erros), cache hit ratio |
+| **Grafana → Explore (Loki)** | http://localhost:3000/explore | `admin` / `admin` | Logs JSON estruturados; filtrar por `{service="gateway"}` ou `{correlation_id="q-…"}` para reconstituir um fluxo |
+| **Prometheus** | http://localhost:9090 | — | `/targets` (saúde do scrape dos 5 jobs), `/graph` (PromQL ad-hoc nas métricas `rag_*`) |
+| **RabbitMQ Management** | http://localhost:15672 | `guest` / `guest` | Filas, taxas de publish/consume, profundidade, DLQs (`*.dlq`), conexões |
+| **Qdrant dashboard** | http://localhost:6333/dashboard | — | Collection `se_corpus`, `points_count`, busca exploratória |
+| **Gateway** | http://localhost:8000 | — | `/health` e `/metrics` (exposição Prometheus em texto) |
+
+> **Loki não tem GUI próprio** — é consultado via Grafana → Explore (datasource Loki já provisionado). A API responde em `http://localhost:3100/ready` apenas para healthcheck.
+
+Catálogo das 11 métricas + queries PromQL/LogQL prontas em [`docs/observabilidade.md`](docs/observabilidade.md).
 
 ## Comandos de desenvolvimento
 

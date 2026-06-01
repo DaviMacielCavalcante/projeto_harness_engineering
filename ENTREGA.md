@@ -20,8 +20,7 @@ Entrega do Tema 5 - RAG Distribuído.
 
 ## 8.3 Apresentação e demo
 
-- [x] Slides-base em `docs/slides/slides.md`.
-- [x] Render final `docs/slides/slides.pdf`.
+- [x] Slides finalizados — **entregues via link no Google Classroom** (não versionados neste repo).
 - [ ] Ensaio de 15-20 min.
 - [ ] Demo validada na máquina de apresentação.
 
