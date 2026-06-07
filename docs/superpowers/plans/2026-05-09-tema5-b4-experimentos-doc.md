@@ -612,6 +612,30 @@ if __name__ == "__main__":
 
 ## Task 5: Experimento 3 — Ollama vs vLLM (CONDICIONAL)
 
+> **STATUS 2026-06-07 — IMPLEMENTADO (execução pendente).** Cortado em 2026-05-24
+> (corte #1), revivido após nova prorrogação do prazo. **Divergências deliberadas
+> em relação ao esqueleto abaixo:**
+> - **Cliente "opção B" via `/v1/chat/completions`, não `/v1/completions`.** O
+>   pipeline real gera com `chat()` + function calling (não `generate()`); o
+>   esqueleto deste plano estava defasado. O `VllmClient` implementa `chat()`
+>   **sem** function calling (`tool_calls=[]` → o worker usa o fallback estrutural
+>   de citações que já existe). Métrica do Exp 3 é throughput/latência, não citação.
+> - **Embedder/generator separados** no `query-worker` via `Protocol ChatGenerator`;
+>   embeddings ficam sempre no Ollama (o `embed` do `VllmClient` levanta `NotImplementedError`).
+> - **Terraform-native, não só compose.** vLLM é recurso no módulo `server` (gated
+>   por `enable_vllm`); o Ollama vai para **CPU** quando o vLLM sobe (a GPU de 8GB
+>   não comporta os dois). Backend switch no módulo `worker`. Override de compose
+>   mantido apenas para o smoke isolado.
+> - **Flags de 8GB (RTX 4060 Ti), validados após 4 OOMs:**
+>   `--gpu-memory-utilization=0.85 --kv-cache-dtype=fp8 --enforce-eager --max-num-seqs=32`
+>   + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`. Concorrência máx reportada: 6.04x.
+> - **Makefile:** targets `vllm-smoke` e `exp3-*` (toggles via `-var`).
+> - **Modelo único como fonte da verdade:** `vllm_model` default em `variables.tf`
+>   casa server e worker; trocar p/ 3B (se o 7B sufocar) é mudar só ali.
+>
+> **Falta:** rodar em Modo 2 (PC2/PC3), coletar `data/exp3/{ollama,vllm}/results.csv`
+> + `exp3.png`, e escrever o §7 do doc técnico com os números reais.
+
 **Files:**
 - Create: `infra/docker/vllm-compose.override.yml`
 - Create: `scripts/run_exp3_ollama_vs_vllm.py`

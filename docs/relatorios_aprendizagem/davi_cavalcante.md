@@ -5,7 +5,7 @@
 **Aluno:** Davi Maciel Cavalcante
 **Disciplina:** Engenharia de Contexto e Harness Engineering aplicada à Programação Distribuída e Paralela
 **Instituição:** CESUPA — 2º bimestre de 2026
-**Período relatado:** 09/05/2026 a 25/05/2026
+**Período relatado:** 09/05/2026 a 07/06/2026
 
 
 ## Sumário
@@ -16,6 +16,7 @@
    3.1 Bloco B1 — Fundação
    3.2 Bloco B2 — Recuperação, rerank e cache
    3.3 Bloco B3 — Resiliência, observabilidade e modo distribuído
+   3.4 Bloco B4 — Inferência: Ollama vs vLLM
 4. Aprendizados de processo
 5. Conclusão
 
@@ -52,6 +53,13 @@ Fui responsável pela fundação do projeto e por boa parte da evolução dela: 
 - **Degradar é melhor que quebrar**: o gateway preferir retornar chunks brutos com `[degraded mode]` em vez de 504 vazio quando o worker trava foi decisão consciente. Parti do entendimento que a aplicação não deveria quebrar se um worker apresentar mal funcionamento.
 - **Observabilidade é design, não digitação**: `structlog` com `correlation_id` propagado via `contextvars` reconstitui o caminho de uma requisição entre gateway → fila → worker → Ollama. Sem isso, depurar o sistema seria quase impossível.
 - **Modo distribuído real**: na migração do Docker Compose (Modo 1) para Terraform com três PCs via Tailscale (Modo 2), aprendi que o atributo `keep_locally = true` do provider Docker bloqueia rebuilds — imagens antigas continuam rodando até serem apagadas manualmente. Também aprendi que a paridade entre o compose e o terraform precisa ser explícita: omitir o bloco `gpus = "all"` no terraform fez o Ollama subir em CPU pura.
+
+### 3.4 Bloco B4 — Inferência: Ollama vs vLLM
+
+- **Servidor de inferência ≠ modelo**: entender o vLLM me obrigou a separar dois níveis de paralelismo que eu tratava como um só. Paralelizar a *aplicação* (mais query-workers, maior concorrência) só rende até o ponto em que o *servidor de inferência* satura. O ganho do vLLM sobre o Ollama vem do **continuous batching** + **PagedAttention**: ele remonta o lote a cada passo de geração e pagina o KV cache como o sistema operacional pagina memória, mantendo a GPU ocupada onde o Ollama enfileira requisições.
+- **VRAM é o teto do paralelismo, não um detalhe**: rodar o Qwen2.5-7B-AWQ numa RTX 4060 Ti de 8GB foi uma sequência de quatro `CUDA out of memory`, cada um num estágio diferente do boot (captura de CUDA graphs → checagem pré-voo de memória → *warmup* do *sampler* com 256 requisições dummy). Ler *onde* cada erro acontecia ensinou mais que a correção em si: `--kv-cache-dtype fp8` dobra a janela de *batching* cortando o KV cache pela metade, `--enforce-eager` troca latência por VRAM ao desligar os CUDA graphs, e `--max-num-seqs` dimensiona o warmup. O número que o vLLM reporta — "concorrência máxima 6.04x" — é literalmente o tamanho do paralelismo do servidor na minha placa.
+- **A fronteira do experimento define o escopo do código**: como a métrica do Exp 3 é throughput/latência, não qualidade da citação, escolhi um cliente vLLM sem *function calling* (a "opção B") que reaproveita o fallback estrutural de citações que o pipeline já tinha. Resistir a reimplementar o *tool-calling* no vLLM — trabalho real que não move a métrica medida — foi uma decisão de escopo, não de preguiça.
+- **IaC como interruptor de topologia**: a restrição de 8GB (vLLM e Ollama não cabem juntos na GPU) virou uma única linha de Terraform — `gpus = var.enable_vllm ? null : "all"` move o Ollama para CPU quando o vLLM sobe. É a mesma lição do B3 (omitir `gpus` joga o serviço pra CPU), agora usada de propósito: um *flag* declarativo reconfigura quem ocupa a GPU, sem `docker stop` manual no meio do experimento.
 
 
 ## 4. Aprendizados de processo

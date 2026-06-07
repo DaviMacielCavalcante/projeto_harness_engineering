@@ -23,6 +23,8 @@ module "server" {
 
   network_name = docker_network.rag_net.name
   image_tag    = var.image_tag
+  enable_vllm  = var.enable_vllm
+  vllm_model   = var.vllm_model
 }
 
 # Observabilidade vive junto do server (PC1). Prometheus/Grafana/Loki são
@@ -48,4 +50,7 @@ module "worker" {
   rerank_url         = var.rerank_url
   image_tag          = var.image_tag
   chunk_worker_count = var.chunk_worker_count
+  inference_backend  = var.inference_backend
+  vllm_url           = var.vllm_url
+  vllm_model         = var.vllm_model
 }

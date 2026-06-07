@@ -1,8 +1,8 @@
 """Plot standalone do Exp 2 — lê ``data/exp2/results.csv`` e gera ``data/exp2/exp2.png``.
 
 Script à parte (independente do runner): roda sozinho sobre o CSV já coletado.
-Dois painéis lado a lado: throughput (QPS) × concorrência e latência
-p50/p95/p99 × concorrência, com o teto de timeout do gateway (~120 s, a partir
+Dois painéis lado a lado: throughput (QPS) x concorrência e latência
+p50/p95/p99 x concorrência, com o teto de timeout do gateway (~120 s, a partir
 do qual a query cai em *degraded mode*) marcado por uma linha tracejada.
 
 Uso:
@@ -16,7 +16,7 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
+import matplotlib.pyplot as plt
 
 CSV_PATH = Path("data/exp2/results.csv")
 OUT_PATH = Path("data/exp2/exp2.png")

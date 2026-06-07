@@ -41,6 +41,21 @@ variable "chunk_worker_count" {
   description = "Réplicas do ingest-worker-chunk. Exp 1 varia este valor para medir speedup de indexação."
 }
 
+variable "inference_backend" {
+  type    = string
+  default = "ollama"
+}
+
+variable "vllm_url" {
+  type    = string
+  default = ""
+}
+
+variable "vllm_model" {
+  type    = string
+  default = "Qwen/Qwen2.5-7B-Instruct-AWQ"
+}
+
 resource "docker_image" "worker" {
   name         = "rag-worker:${var.image_tag}"
   keep_locally = true
@@ -116,6 +131,10 @@ resource "docker_container" "query_worker" {
     "WORKER_KIND=query",
     "SERVICE_NAME=query-worker",
     "METRICS_PORT=9100",
+    # Exp 3: troca o gerador (embeddings continuam no Ollama de qualquer forma).
+    "INFERENCE_BACKEND=${var.inference_backend}",
+    "VLLM_URL=${var.vllm_url}",
+    "VLLM_MODEL=${var.vllm_model}",
   ])
   networks_advanced {
     name = var.network_name

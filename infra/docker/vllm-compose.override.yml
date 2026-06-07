@@ -1,0 +1,70 @@
+# Override do Exp 3 (CONDICIONAL) — sobe o vLLM como gerador alternativo ao Ollama.
+#
+# Objetivo: comparar o paralelismo da APLICAÇÃO (mais query-workers / concorrência C)
+# contra o paralelismo do SERVIDOR de inferência (continuous batching + PagedAttention
+# do vLLM). Ver spec §10.3 e ADR-004.
+#
+# Ajustado para a GPU do PC1: RTX 4060 Ti, 8GB de VRAM (apertado). Por isso:
+#   - max-model-len 4096 (os chunks cabem; reduz a pressão no KV cache)
+#   - gpu-memory-utilization 0.85 (deixa ~1,2GB pro desktop/Xorg; subir pra 0.90 só
+#     em máquina headless)
+#
+# Como subir (em PC1, com a GPU livre):
+#   1. Pare o Ollama gerador para liberar VRAM:  docker stop rag-ollama
+#      (o vLLM NÃO serve embeddings — o `nomic-embed-text` precisa continuar vivo;
+#       rode-o em CPU ou num Ollama separado durante o Exp 3.)
+#   2. docker compose -f docker-compose.yml -f infra/docker/vllm-compose.override.yml \
+#        --profile vllm up -d vllm
+#   3. Troque o backend no .env.local: INFERENCE_BACKEND=vllm e reinicie o query-worker.
+#
+# Smoke isolado (sem app), só pra ver se sobe:
+#   docker run --gpus all --rm -p 8002:8000 -v vllm_models:/root/.cache/huggingface \
+#     vllm/vllm-openai:latest --model Qwen/Qwen2.5-7B-Instruct-AWQ --quantization awq \
+#     --max-model-len 4096 --gpu-memory-utilization 0.85
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: rag-vllm
+    profiles: ["vllm"]
+    ports:
+      - "8002:8000"  # host 8002 para não colidir com o gateway (8000)
+    environment:
+      # Sugerido pelo próprio vLLM no OOM: reduz fragmentação do alocador CUDA.
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+    volumes:
+      - vllm_models:/root/.cache/huggingface  # cache do modelo entre execuções
+    command:
+      # NOTA 8GB: o 7B-AWQ carrega ~5,3GB e deixa só ~1GB de KV cache — batching
+      # quase não respira, o que ENFRAQUECE a tese do experimento. Para uma
+      # comparação que de fato mostre o continuous batching, troque os DOIS lados
+      # para 3B: aqui Qwen2.5-3B-Instruct-AWQ, e o Ollama para qwen2.5:3b.
+      - "--model=Qwen/Qwen2.5-7B-Instruct-AWQ"
+      - "--quantization=awq"
+      - "--max-model-len=4096"
+      # 0.85 (não 0.90): em desktop o Xorg+navegador ocupam ~0,8GB e flutuam; a
+      # checagem pré-voo do vLLM falha se o livre cair abaixo do alvo (validado
+      # em 2026-06-07). 0.85 dá folga contra essa variação.
+      - "--gpu-memory-utilization=0.85"
+      # KV cache em fp8 (8 bits em vez de 16): dobra a janela de batching no mesmo
+      # espaço de VRAM. Na 4060 Ti (Ada, sm_89) o fp8 é nativo. Precisão cai de
+      # forma desprezível — e é justamente o batching que o Exp 3 quer demonstrar.
+      - "--kv-cache-dtype=fp8"
+      # Obrigatório em 8GB: sem isso, a captura de CUDA graphs estoura a VRAM no
+      # boot (validado em 2026-06-07). Desliga os graphs; custo é latência um
+      # pouco maior, irrelevante para o que medimos.
+      - "--enforce-eager"
+      # O warmup do sampler usa max_num_seqs requisições dummy; o default (256)
+      # estoura a VRAM residual em 8GB (validado em 2026-06-07). 32 = o C máximo
+      # da varredura do Exp 2/3, então não limita o experimento.
+      - "--max-num-seqs=32"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  vllm_models:

@@ -15,6 +15,18 @@ variable "image_tag" {
   type = string
 }
 
+variable "enable_vllm" {
+  type        = bool
+  default     = false
+  description = "Exp 3 (bônus): sobe o vLLM e move o Ollama para CPU (libera a GPU de 8GB)."
+}
+
+variable "vllm_model" {
+  type        = string
+  default     = "Qwen/Qwen2.5-7B-Instruct-AWQ"
+  description = "Id do modelo servido pelo vLLM; precisa casar com VLLM_MODEL do query-worker."
+}
+
 # ---------------------------------------------------------------------------
 # RabbitMQ
 # ---------------------------------------------------------------------------
@@ -146,9 +158,60 @@ resource "docker_container" "ollama" {
     container_path = "/root/.ollama"
   }
 
+  # Exp 3: quando o vLLM sobe (enable_vllm), o Ollama cede a GPU de 8GB inteira
+  # ao vLLM e roda em CPU. Embeddings (nomic, pequeno) aguentam bem em CPU, e a
+  # geração nessa fase vai para o vLLM — o Ollama só serve embed.
+  gpus    = var.enable_vllm ? null : "all"
+  runtime = var.enable_vllm ? null : "nvidia"
+
+  restart = "unless-stopped"
+}
+
+# ---------------------------------------------------------------------------
+# vLLM — gerador alternativo do Exp 3 (CONDICIONAL: só com enable_vllm=true).
+# Flags de 8GB validados em 2026-06-07 na RTX 4060 Ti; ver
+# infra/docker/vllm-compose.override.yml para o racional de cada um.
+# ---------------------------------------------------------------------------
+resource "docker_image" "vllm" {
+  count = var.enable_vllm ? 1 : 0
+  name  = "vllm/vllm-openai:latest"
+}
+
+resource "docker_volume" "vllm_models" {
+  count = var.enable_vllm ? 1 : 0
+  name  = "vllm_models"
+}
+
+resource "docker_container" "vllm" {
+  count = var.enable_vllm ? 1 : 0
+  name  = "rag-vllm"
+  image = docker_image.vllm[0].image_id
+  env = [
+    "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
+  ]
+  command = [
+    "--model=${var.vllm_model}",
+    "--quantization=awq",
+    "--max-model-len=4096",
+    "--gpu-memory-utilization=0.85",
+    "--kv-cache-dtype=fp8",
+    "--enforce-eager",
+    "--max-num-seqs=32",
+  ]
+  networks_advanced {
+    name    = var.network_name
+    aliases = ["vllm"]
+  }
+  ports {
+    internal = 8000
+    external = 8002
+  }
+  volumes {
+    volume_name    = docker_volume.vllm_models[0].name
+    container_path = "/root/.cache/huggingface"
+  }
   gpus    = "all"
   runtime = "nvidia"
-
   restart = "unless-stopped"
 }
 

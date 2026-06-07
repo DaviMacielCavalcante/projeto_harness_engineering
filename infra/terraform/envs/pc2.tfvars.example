@@ -24,3 +24,9 @@ image_tag     = "0.1.0-b3"
 #   make tf-apply HOST=pc2   # com chunk_worker_count ajustado aqui, ou:
 #   terraform -chdir=infra/terraform apply -var-file=envs/pc2.tfvars -var chunk_worker_count=4
 chunk_worker_count = 1
+
+# Exp 3 (bônus): aponta a GERAÇÃO do query-worker para o vLLM no PC1. Só depois
+# que o PC1 subiu com enable_vllm=true e o vLLM responde em :8002. Os embeddings
+# continuam no Ollama (ollama_url acima). Reverta para "ollama" ao terminar.
+# inference_backend = "vllm"
+# vllm_url          = "http://100.FILL.ME.IN:8002"

@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     generation_num_ctx: int = 8192
     generation_temperature: float = 0.2
 
+    # Backend de geração: "ollama" (linha-base) ou "vllm" (Exp 3, spec §10.3).
+    # Embeddings ficam SEMPRE no Ollama; só a geração troca de backend.
+    inference_backend: Literal["ollama", "vllm"] = "ollama"
+    vllm_url: str = "http://vllm:8000"
+    vllm_model: str = "Qwen/Qwen2.5-7B-Instruct-AWQ"
+    generation_max_tokens: int = 1024  # teto de saída por request (usado no vLLM)
+
     # Vector DB (Qdrant)
     qdrant_url: str = "http://qdrant:6333"
     qdrant_collection: str = "se_corpus"

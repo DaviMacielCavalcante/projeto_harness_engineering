@@ -44,6 +44,7 @@ from src.shared.metrics import (
 from src.shared.ollama_client import OllamaClient
 from src.shared.schemas import Citation, QueryRequestMessage, QueryResponse
 from src.shared.session import SessionStore
+from src.shared.vllm_client import ChatGenerator, VllmClient
 from src.shared.workers_metrics_server import start_metrics_server
 from src.workers.query.prompt_builder import ContextBlock, build_messages
 from src.workers.query.reranker_client import RerankerClient
@@ -68,6 +69,7 @@ def load_cite_source_tool() -> dict[str, Any]:
 async def handle_query(
     payload: dict[str, object],
     ollama: OllamaClient,
+    generator: ChatGenerator,
     qdrant: AsyncQdrantClient,
     conn: AbstractRobustConnection,
     cache: Cache,
@@ -82,7 +84,12 @@ async def handle_query(
     payload : dict
         Corpo JSON da mensagem (validar em :class:`QueryRequestMessage`).
     ollama : OllamaClient
-        Cliente para embed da pergunta e geração da resposta.
+        Cliente para o embed da pergunta (FASE 1). A geração NÃO passa mais por
+        aqui — ela usa ``generator`` (que pode ser Ollama ou vLLM).
+    generator : ChatGenerator
+        Backend de geração da resposta (FASE 6). É o próprio ``ollama`` quando
+        ``inference_backend="ollama"``, ou um :class:`VllmClient` quando
+        ``"vllm"`` (Exp 3). Embeddings ficam sempre no Ollama.
     qdrant : AsyncQdrantClient
         Cliente para o retrieval vetorial (busca, não upsert).
     conn : AbstractRobustConnection
@@ -95,7 +102,7 @@ async def handle_query(
         Histórico/resumo de conversa, usado só quando há ``session_id``.
     cite_tool : dict
         Definição da tool ``cite_source`` (function calling), passada ao
-        ``ollama.chat`` em ``tools=[cite_tool]``.
+        ``generator.chat`` em ``tools=[cite_tool]``. No backend vLLM é ignorada.
 
     Notes
     -----
@@ -288,12 +295,14 @@ async def handle_query(
         # ------------------------------------------------------------------
         # FASE 6 — Geração no Ollama via /api/chat (com a tool cite_source)
         # ------------------------------------------------------------------
-        # Troca de generate→chat: agora passamos a tool e o modelo PODE emitir
+        # Troca de generate→chat: passamos a tool e o modelo PODE emitir
         # tool_calls (citações estruturadas). O `generated` ganha "tool_calls".
+        # No backend vLLM (Exp 3) a tool é ignorada e tool_calls volta []: o
+        # bloco da FASE 7 já lida com isso via fallback estrutural.
         with query_pipeline_duration.labels(phase="generate", worker_id=HOSTNAME).time():
             ollama_inflight.inc()
             try:
-                generated = await ollama.chat(
+                generated = await generator.chat(
                     messages=messages,
                     model=settings.generation_model,
                     tools=[cite_tool],
@@ -402,6 +411,25 @@ async def main() -> None:
     qdrant_client = AsyncQdrantClient(url=settings.qdrant_url)
     ollama_client = OllamaClient(base_url=settings.ollama_url)
     reranker_client = RerankerClient(base_url=settings.rerank_url)
+
+    # Geração: Ollama (linha-base) ou vLLM (Exp 3). Embeddings ficam sempre no
+    # ollama_client; só a geração troca. A seleção é em runtime via env.
+    generator: ChatGenerator
+    if settings.inference_backend == "vllm":
+        generator = VllmClient(
+            base_url=settings.vllm_url,
+            model=settings.vllm_model,
+            max_tokens=settings.generation_max_tokens,
+        )
+        log.info(
+            "query-worker.generator",
+            backend="vllm",
+            url=settings.vllm_url,
+            model=settings.vllm_model,
+        )
+    else:
+        generator = ollama_client
+        log.info("query-worker.generator", backend="ollama", model=settings.generation_model)
     # Any na fronteira: a redis-py tipa get/setex como `Awaitable[Any] | Any`
     # com param `name` (não `k`), então o cliente real não casa estruturalmente
     # com o Protocol _RedisLike — que existe pro seam de teste (FakeRedis). A
@@ -422,6 +450,7 @@ async def main() -> None:
             return await handle_query(
                 payload=payload,
                 ollama=ollama_client,
+                generator=generator,
                 qdrant=qdrant_client,
                 conn=conn,
                 cache=cache,
